@@ -99,14 +99,32 @@ async def lifespan(app: FastAPI):
         owner=_state.settings.brand_owner,
     )
 
-    # State + downstream clients.
+    # State + downstream clients. Wrap each in try/except so a missing or
+    # invalid credential can't keep the app from booting — admin UI must
+    # come up so the user can configure.
     _state.state = StateStore(_state.settings.state_dir)
-    _state.graph = GraphClient(_state.settings)
-    _state.embedder = Embedder(_state.settings)
-    _state.pinecone = PineconeStore(_state.settings)
-    _state.orchestrator = SyncOrchestrator(
-        _state.settings, _state.graph, _state.embedder, _state.pinecone, _state.state
-    )
+
+    def _safe(name, fn):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001
+            log.warning("client.init.skip", client=name, err=str(e))
+            return None
+
+    _state.graph = _safe("graph", lambda: GraphClient(_state.settings))
+    _state.embedder = _safe("openai", lambda: Embedder(_state.settings))
+    _state.pinecone = _safe("pinecone", lambda: PineconeStore(_state.settings))
+
+    if all([_state.graph, _state.embedder, _state.pinecone]):
+        _state.orchestrator = SyncOrchestrator(
+            _state.settings, _state.graph, _state.embedder, _state.pinecone, _state.state
+        )
+    else:
+        _state.orchestrator = None
+        log.warning(
+            "orchestrator.disabled",
+            hint="Set GRAPH_*/OPENAI_*/PINECONE_* env vars or fill in /admin to enable.",
+        )
 
     # Auth manager always reads the *current* settings.
     set_auth_manager(AuthManager(lambda: _state.settings))
@@ -124,25 +142,28 @@ async def lifespan(app: FastAPI):
 
     # Scheduler.
     _state.scheduler = AsyncIOScheduler()
-    _state.scheduler.add_job(
-        _state.orchestrator.run_sync,
-        trigger=_build_trigger(_state.settings),
-        id="onedrive-sync",
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=300,
-    )
+    if _state.orchestrator is not None:
+        _state.scheduler.add_job(
+            _state.orchestrator.run_sync,
+            trigger=_build_trigger(_state.settings),
+            id="onedrive-sync",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=300,
+        )
     _state.scheduler.start()
 
-    if _state.settings.sync_on_startup:
+    if _state.settings.sync_on_startup and _state.orchestrator is not None:
         asyncio.create_task(_run_startup_sync())
 
     try:
         yield
     finally:
         log.info("app.shutdown")
-        _state.scheduler.shutdown(wait=False)
-        await _state.graph.aclose()
+        if getattr(_state, "scheduler", None):
+            _state.scheduler.shutdown(wait=False)
+        if getattr(_state, "graph", None) is not None:
+            await _state.graph.aclose()
 
 
 async def _run_startup_sync() -> None:

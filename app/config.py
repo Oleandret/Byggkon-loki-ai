@@ -33,10 +33,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Microsoft Graph
-    graph_tenant_id: str
-    graph_client_id: str
-    graph_client_secret: str
+    # Microsoft Graph (empty defaults so the app can boot to admin UI;
+    # the user fills these in via the admin or env vars before sync runs)
+    graph_tenant_id: str = ""
+    graph_client_id: str = ""
+    graph_client_secret: str = ""
     graph_authority: str = "https://login.microsoftonline.com"
     graph_scope: str = "https://graph.microsoft.com/.default"
     graph_base_url: str = "https://graph.microsoft.com/v1.0"
@@ -53,15 +54,15 @@ class Settings(BaseSettings):
     sync_cron: str = ""
     sync_on_startup: bool = True
 
-    # OpenAI
-    openai_api_key: str
+    # OpenAI (optional default so admin UI can come up first)
+    openai_api_key: str = ""
     openai_embedding_model: str = "text-embedding-3-large"
     openai_embedding_dimensions: int = 3072
     embedding_batch_size: int = 64
 
-    # Pinecone
-    pinecone_api_key: str
-    pinecone_index: str
+    # Pinecone (optional default so admin UI can come up first)
+    pinecone_api_key: str = ""
+    pinecone_index: str = ""
     pinecone_namespace: str = ""
 
     # Unstructured

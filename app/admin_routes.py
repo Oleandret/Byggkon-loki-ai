@@ -165,6 +165,9 @@ async def api_patch_settings(payload: dict) -> dict:
 @api.get("/stats")
 async def api_stats() -> dict:
     s = _app_state.state.stats()
+    if _app_state.pinecone is None:
+        s["pinecone_error"] = "Not configured"
+        return s
     try:
         idx = await _app_state.pinecone.index_stats()
         s["pinecone"] = idx if isinstance(idx, dict) else dict(idx)
@@ -180,6 +183,8 @@ async def api_runs(limit: int = 20) -> dict:
 
 @api.post("/sync")
 async def api_trigger_sync() -> dict:
+    if _app_state.orchestrator is None:
+        return {"status": "skipped", "reason": "Not configured. Fill in Graph/OpenAI/Pinecone settings first."}
     asyncio.create_task(_app_state.orchestrator.run_sync())
     return {"status": "started"}
 
@@ -187,6 +192,8 @@ async def api_trigger_sync() -> dict:
 # ─── Test connections ────────────────────────────────────────────────
 @api.post("/test/graph")
 async def api_test_graph() -> dict:
+    if _app_state.graph is None:
+        return {"ok": False, "error": "Graph not configured (missing tenant/client/secret)"}
     try:
         # /me would be a delegated call; for app-only we hit /organization
         # which works with even minimal scopes.
@@ -203,6 +210,8 @@ async def api_test_graph() -> dict:
 
 @api.post("/test/openai")
 async def api_test_openai() -> dict:
+    if _app_state.embedder is None:
+        return {"ok": False, "error": "OpenAI not configured (missing api key)"}
     try:
         vec = await _app_state.embedder.embed(["Loki AI test."])
         return {"ok": True, "dim": len(vec[0])}
@@ -212,6 +221,8 @@ async def api_test_openai() -> dict:
 
 @api.post("/test/pinecone")
 async def api_test_pinecone() -> dict:
+    if _app_state.pinecone is None:
+        return {"ok": False, "error": "Pinecone not configured (missing api key or index)"}
     try:
         stats = await _app_state.pinecone.index_stats()
         out = stats if isinstance(stats, dict) else dict(stats)
