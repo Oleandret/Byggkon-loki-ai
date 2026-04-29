@@ -74,29 +74,21 @@ while IFS= read -r line; do
     fi
 
     if [[ -z "$VALUE" ]]; then
+      # Railway CLI doesn't accept empty values via --set, so we skip these
+      # and report them at the end. User fills them in manually in the
+      # dashboard or via `railway variables --set KEY=value`.
       EMPTY_SECRETS+=("$KEY")
-      # Still set it as empty string so the variable exists in Railway and
-      # appears in the UI for the user to fill in.
-      if $YES; then
-        railway variables --set "${KEY}=" >/dev/null
-        ADDED+=("$KEY (tom)")
-      else
-        read -r -p "   Add empty placeholder for ${KEY}? [Y/n] " ans
-        if [[ "${ans,,}" != "n" ]]; then
-          railway variables --set "${KEY}=" >/dev/null
-          ADDED+=("$KEY (tom)")
-        fi
-      fi
+      continue
+    fi
+
+    if $YES; then
+      railway variables --set "${KEY}=${VALUE}" >/dev/null
+      ADDED+=("$KEY")
     else
-      if $YES; then
+      read -r -p "   Add ${KEY}=${VALUE}? [Y/n] " ans
+      if [[ "${ans,,}" != "n" ]]; then
         railway variables --set "${KEY}=${VALUE}" >/dev/null
         ADDED+=("$KEY")
-      else
-        read -r -p "   Add ${KEY}=${VALUE}? [Y/n] " ans
-        if [[ "${ans,,}" != "n" ]]; then
-          railway variables --set "${KEY}=${VALUE}" >/dev/null
-          ADDED+=("$KEY")
-        fi
       fi
     fi
   fi
@@ -104,19 +96,18 @@ done < "$ENV_FILE"
 
 echo
 echo "─────────────────────────────────────────────"
-echo "Lagt til (${#ADDED[@]}):"
-for v in "${ADDED[@]}"; do echo "  • $v"; done
+echo "✓ Lagt til med default-verdi (${#ADDED[@]}):"
+for v in "${ADDED[@]}"; do echo "    • $v"; done
 echo
-echo "Allerede satt — ikke rørt (${#SKIPPED[@]}):"
-for v in "${SKIPPED[@]}"; do echo "  • $v"; done
+echo "↻ Allerede satt — ikke rørt (${#SKIPPED[@]}):"
+for v in "${SKIPPED[@]}"; do echo "    • $v"; done
 echo
-echo "Tomme placeholders du må fylle ut (${#EMPTY_SECRETS[@]}):"
-for v in "${EMPTY_SECRETS[@]}"; do
-  if printf '%s\n' "${ADDED[@]}" | grep -q "^${v} (tom)$"; then
-    echo "  • $v"
-  fi
-done
+echo "✎ Trenger verdi (${#EMPTY_SECRETS[@]}) — fyll inn i Railway-dashboardet:"
+for v in "${EMPTY_SECRETS[@]}"; do echo "    • $v"; done
 echo "─────────────────────────────────────────────"
 echo
-echo "✓ Ferdig. Åpne Railway-dashboardet og fyll inn nøkler:"
-railway variables 2>&1 | head -3
+echo "Sett en hemmelig verdi raskt fra terminalen:"
+echo "    railway variables --set 'OPENAI_API_KEY=sk-...'"
+echo
+echo "Eller åpne dashboardet:"
+echo "    railway open"
