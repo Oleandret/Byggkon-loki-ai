@@ -150,6 +150,14 @@
     }
   }
 
+  // Maps a settings-group name → the /api/test endpoint that exercises it.
+  const GROUP_TESTS = {
+    "Microsoft Graph": "graph",
+    "OpenAI Embeddings": "openai",
+    "Gemini Embeddings": "gemini",
+    "Pinecone": "pinecone",
+  };
+
   function renderSettings() {
     const formEl = $("#settings-form");
     const groups = {};
@@ -160,14 +168,59 @@
     const showAdvanced = $("#show-advanced").checked;
 
     formEl.innerHTML = Object.entries(groups)
-      .map(([group, fields]) => `
-        <section class="settings-group">
-          <h2>${escapeHtml(group)}</h2>
-          <p class="group-desc">${groupBlurb(group)}</p>
-          ${fields.map(renderField).join("")}
-        </section>
-      `)
+      .map(([group, fields]) => {
+        const test = GROUP_TESTS[group];
+        const testBtn = test
+          ? `<button type="button" class="btn btn-secondary group-test-btn" data-group-test="${test}">
+               <span class="group-test-dot" data-state=""></span>
+               <span class="group-test-label">Test tilkobling</span>
+             </button>`
+          : "";
+        return `
+          <section class="settings-group" data-group-name="${escapeHtml(group)}">
+            <header class="settings-group-head">
+              <div>
+                <h2>${escapeHtml(group)}</h2>
+                <p class="group-desc">${groupBlurb(group)}</p>
+              </div>
+              ${testBtn}
+            </header>
+            <pre class="group-test-output" data-group-output="${test || ''}"></pre>
+            ${fields.map(renderField).join("")}
+          </section>
+        `;
+      })
       .join("");
+
+    // Wire up per-group test buttons.
+    $$("[data-group-test]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const which = btn.dataset.groupTest;
+        const dot = btn.querySelector(".group-test-dot");
+        const lbl = btn.querySelector(".group-test-label");
+        const out = btn
+          .closest(".settings-group")
+          .querySelector(".group-test-output");
+        btn.disabled = true;
+        dot.dataset.state = "pending";
+        lbl.textContent = "Tester…";
+        out.classList.remove("is-shown");
+        try {
+          const r = await api("POST", `/api/test/${which}`);
+          dot.dataset.state = r.ok ? "ok" : "err";
+          lbl.textContent = r.ok ? "OK" : "Feilet";
+          out.textContent = JSON.stringify(r, null, 2);
+          out.classList.add("is-shown");
+        } catch (e) {
+          dot.dataset.state = "err";
+          lbl.textContent = "Feilet";
+          out.textContent = e.message;
+          out.classList.add("is-shown");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
 
     // Toggle advanced rows
     $$(".settings-row.is-advanced").forEach((row) =>
@@ -251,6 +304,38 @@
     )}" data-kind="${escapeHtml(f.kind)}" class="input"
             value="${escapeHtml(valStr)}" ${placeholder} />`;
   }
+
+  // "Test alle tilkoblinger" — clicks every per-group test button in order
+  // and updates the toolbar dot to the worst result.
+  document
+    .getElementById("test-all-groups-btn")
+    ?.addEventListener("click", async () => {
+      const toolbarDot = document.querySelector(
+        "#test-all-groups-btn .group-test-dot"
+      );
+      toolbarDot.dataset.state = "pending";
+      let worst = "ok";
+      for (const btn of $$("[data-group-test]")) {
+        btn.click();
+        // Wait for this test to finish before kicking off the next one,
+        // by polling its dot until it's no longer "pending".
+        const dot = btn.querySelector(".group-test-dot");
+        await new Promise((res) => {
+          const tick = () => {
+            if (dot.dataset.state && dot.dataset.state !== "pending") {
+              if (dot.dataset.state === "err") worst = "err";
+              else if (dot.dataset.state === "warn" && worst !== "err")
+                worst = "warn";
+              res();
+            } else {
+              setTimeout(tick, 100);
+            }
+          };
+          tick();
+        });
+      }
+      toolbarDot.dataset.state = worst;
+    });
 
   $("#show-advanced")?.addEventListener("change", () => {
     $$(".settings-row.is-advanced").forEach((row) =>
