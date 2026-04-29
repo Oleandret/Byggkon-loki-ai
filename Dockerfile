@@ -74,9 +74,9 @@ WORKDIR /app
 COPY app ./app
 COPY scripts ./scripts
 
-# State volume mount point (Railway will mount a Volume here).
+# State volume mount point. On Railway, attach a Volume with mount-path /data
+# in the service settings — Railway doesn't support the VOLUME directive.
 RUN mkdir -p /data /tmp/onedrive-sync
-VOLUME ["/data"]
 
 EXPOSE 8000
 
