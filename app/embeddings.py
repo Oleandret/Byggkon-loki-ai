@@ -1,12 +1,17 @@
-"""OpenAI embeddings, batched, with retries.
+"""Embedding providers — OpenAI (text-only) and Gemini Embedding 2 (multimodal).
 
-text-embedding-3-large defaults to 3072 dims, but supports `dimensions=`
-to truncate. We pass it explicitly so the Pinecone index dimension always
-matches.
+Each provider implements the ``BaseEmbedder`` interface:
+    * ``embed_texts(texts)``     → list[list[float]]
+    * ``embed_image(bytes, mime)`` → list[float]   (raises if not multimodal)
+    * ``capabilities`` → set of {"text", "image"}
+
+The orchestrator picks one or both based on Settings.embedding_provider.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
+from abc import ABC, abstractmethod
 from typing import Iterable
 
 from openai import AsyncOpenAI
@@ -23,26 +28,42 @@ from .logging_config import get_logger
 log = get_logger(__name__)
 
 
-# OpenAI's hard limit per request is 8192 tokens per input and ~300k tokens
-# per request total. Our chunks are ~1500 chars (~400 tokens) so a batch of
-# 64 is comfortably safe.
+# ─── Base class ──────────────────────────────────────────────────────
+class BaseEmbedder(ABC):
+    name: str = "base"
+    capabilities: set[str] = set()
+    dimensions: int = 0
+
+    @abstractmethod
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]: ...
+
+    async def embed_image(self, data: bytes, mime: str) -> list[float]:
+        raise NotImplementedError(f"{self.name} does not support image embedding")
 
 
-class Embedder:
+def _batched(items: list, n: int) -> Iterable[list]:
+    for i in range(0, len(items), n):
+        yield items[i : i + n]
+
+
+# ─── OpenAI embedder ─────────────────────────────────────────────────
+class OpenAIEmbedder(BaseEmbedder):
+    name = "openai"
+    capabilities = {"text"}
+
     def __init__(self, settings: Settings) -> None:
+        if not settings.openai_api_key:
+            raise ValueError("OpenAI API key is empty")
         self._settings = settings
         self._client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.dimensions = settings.openai_embedding_dimensions
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed a list of strings, returning vectors in the same order."""
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-
         out: list[list[float]] = []
-        batch_size = self._settings.embedding_batch_size
-        for batch in _batched(texts, batch_size):
-            vectors = await self._embed_batch(list(batch))
-            out.extend(vectors)
+        for batch in _batched(texts, self._settings.embedding_batch_size):
+            out.extend(await self._embed_batch(batch))
         return out
 
     async def _embed_batch(self, batch: list[str]) -> list[list[float]]:
@@ -59,10 +80,118 @@ class Embedder:
                     dimensions=self._settings.openai_embedding_dimensions,
                 )
                 return [d.embedding for d in resp.data]
-        # Unreachable.
-        raise RuntimeError("embed retry loop exhausted")  # pragma: no cover
+        raise RuntimeError("openai embed retry loop exhausted")  # pragma: no cover
 
 
-def _batched(items: list[str], n: int) -> Iterable[list[str]]:
-    for i in range(0, len(items), n):
-        yield items[i : i + n]
+# ─── Gemini embedder (multimodal) ────────────────────────────────────
+class GeminiEmbedder(BaseEmbedder):
+    """Google Gemini Embedding 2 — text + images in same vector space.
+
+    Uses the Google AI Studio API key path via the `google-genai` SDK.
+    For Vertex AI service-account auth, swap the client construction.
+    """
+
+    name = "gemini"
+    capabilities = {"text", "image"}
+
+    def __init__(self, settings: Settings) -> None:
+        if not settings.gemini_api_key:
+            raise ValueError("Gemini API key is empty")
+        # Local import keeps cold-start cheap when only OpenAI is used.
+        from google import genai
+        from google.genai import types as genai_types
+
+        self._settings = settings
+        self._client = genai.Client(api_key=settings.gemini_api_key)
+        self._types = genai_types
+        self.dimensions = settings.gemini_embedding_dimensions
+        self._batch_size = max(1, min(settings.embedding_batch_size, 100))
+
+    # ─── Text ─────────────────────────────────────────────────────────
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        out: list[list[float]] = []
+        for batch in _batched(texts, self._batch_size):
+            out.extend(await self._embed_text_batch(batch))
+        return out
+
+    async def _embed_text_batch(self, batch: list[str]) -> list[list[float]]:
+        async for retry in AsyncRetrying(
+            stop=stop_after_attempt(5),
+            wait=wait_exponential(multiplier=1, min=1, max=20),
+            retry=retry_if_exception_type(Exception),
+            reraise=True,
+        ):
+            with retry:
+                # google-genai SDK is sync; offload the call.
+                resp = await asyncio.to_thread(
+                    self._client.models.embed_content,
+                    model=self._settings.gemini_embedding_model,
+                    contents=batch,
+                    config=self._types.EmbedContentConfig(
+                        output_dimensionality=self._settings.gemini_embedding_dimensions,
+                    ),
+                )
+                return [list(e.values) for e in resp.embeddings]
+        raise RuntimeError("gemini embed retry loop exhausted")  # pragma: no cover
+
+    # ─── Image ────────────────────────────────────────────────────────
+    async def embed_image(self, data: bytes, mime: str) -> list[float]:
+        async for retry in AsyncRetrying(
+            stop=stop_after_attempt(4),
+            wait=wait_exponential(multiplier=1, min=1, max=20),
+            retry=retry_if_exception_type(Exception),
+            reraise=True,
+        ):
+            with retry:
+                content = self._types.Content(
+                    parts=[self._types.Part.from_bytes(data=data, mime_type=mime)]
+                )
+                resp = await asyncio.to_thread(
+                    self._client.models.embed_content,
+                    model=self._settings.gemini_embedding_model,
+                    contents=[content],
+                    config=self._types.EmbedContentConfig(
+                        output_dimensionality=self._settings.gemini_embedding_dimensions,
+                    ),
+                )
+                emb = resp.embeddings[0]
+                return list(emb.values)
+        raise RuntimeError("gemini image-embed retry loop exhausted")  # pragma: no cover
+
+
+# ─── Factory ─────────────────────────────────────────────────────────
+def build_embedders(settings: Settings) -> dict[str, BaseEmbedder]:
+    """Return a {provider_name: embedder} dict for the configured providers.
+
+    Raises if a configured provider can't be built (missing key etc).
+    Callers in main.py wrap this in a safe-init so the app still boots.
+    """
+    out: dict[str, BaseEmbedder] = {}
+    for name in settings.providers():
+        if name == "openai":
+            out["openai"] = OpenAIEmbedder(settings)
+        elif name == "gemini":
+            out["gemini"] = GeminiEmbedder(settings)
+    return out
+
+
+# ─── Back-compat alias ───────────────────────────────────────────────
+# Older code in main.py and admin_routes.py imports `Embedder`; keep it
+# as a thin wrapper that picks the first/primary provider.
+class Embedder:
+    """Legacy single-provider façade. Picks the first configured provider."""
+
+    def __init__(self, settings: Settings) -> None:
+        embedders = build_embedders(settings)
+        if not embedders:
+            raise ValueError("No embedding provider is configured")
+        # Preserve the user's order: openai before gemini in 'both'.
+        for k in ("openai", "gemini"):
+            if k in embedders:
+                self._impl = embedders[k]
+                break
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        return await self._impl.embed_texts(texts)

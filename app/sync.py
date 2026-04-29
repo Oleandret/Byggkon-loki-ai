@@ -16,7 +16,7 @@ from typing import Optional
 
 from .config import Settings
 from .drive_discovery import DriveRef, discover_drives
-from .embeddings import Embedder
+from .embeddings import BaseEmbedder
 from .graph_client import GraphClient, GraphError
 from .logging_config import get_logger
 from .pinecone_store import PineconeStore
@@ -41,14 +41,14 @@ class SyncOrchestrator:
         self,
         settings: Settings,
         graph: GraphClient,
-        embedder: Embedder,
+        embedders: dict[str, BaseEmbedder],
         pinecone: PineconeStore,
         state: StateStore,
     ) -> None:
         self._settings = settings
         self._graph = graph
         self._state = state
-        self._processor = Processor(settings, graph, embedder, pinecone, state)
+        self._processor = Processor(settings, graph, embedders, pinecone, state)
         self._semaphore = asyncio.Semaphore(settings.process_concurrency)
         self._running = False
         self._lock = asyncio.Lock()

@@ -95,6 +95,11 @@ FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec("sync_on_startup", "Kjør synkronisering ved oppstart", "Tidsplan", "bool",
               "Trigger en sync straks appen starter."),
 
+    # ─── Embedding provider selector ─────────────────────────────────
+    FieldSpec("embedding_provider", "Embedding-provider", "Embeddings", "enum",
+              "OpenAI (kun tekst), Gemini Embedding 2 (multimodal — også bilder), eller begge parallelt.",
+              options=("openai", "gemini", "both")),
+
     # ─── OpenAI ──────────────────────────────────────────────────────
     FieldSpec("openai_api_key", "OpenAI API-nøkkel", "OpenAI Embeddings", "password",
               "Brukes til å embedde chunks med valgt modell."),
@@ -105,16 +110,37 @@ FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec("openai_embedding_dimensions", "Embedding-dimensjoner", "OpenAI Embeddings", "number",
               "Må matche Pinecone-indeksens dimensjon. 3072 for -3-large.",
               requires_restart=True),
-    FieldSpec("embedding_batch_size", "Batch-størrelse", "OpenAI Embeddings", "number",
-              "Antall tekster per OpenAI-kall. 64 er en god default."),
+
+    # ─── Gemini ──────────────────────────────────────────────────────
+    FieldSpec("gemini_api_key", "Gemini API-nøkkel", "Gemini Embeddings", "password",
+              "Hentes fra Google AI Studio (aistudio.google.com)."),
+    FieldSpec("gemini_embedding_model", "Embedding-modell", "Gemini Embeddings", "enum",
+              "Gemini Embedding 2 er multimodal (tekst + bilder + lyd + video).",
+              options=("gemini-embedding-2-preview", "gemini-embedding-2",
+                       "text-embedding-005")),
+    FieldSpec("gemini_embedding_dimensions", "Embedding-dimensjoner", "Gemini Embeddings", "number",
+              "128, 768, 1536 eller 3072 (Matryoshka). 3072 er full kvalitet.",
+              requires_restart=True),
+    FieldSpec("gemini_embed_images", "Embed bilder direkte", "Gemini Embeddings", "bool",
+              "Hvis på: Image-elementer fra PDF-er sendes som bytes til Gemini. Av: kun OCR-tekst."),
+
+    # ─── Felles batch ────────────────────────────────────────────────
+    FieldSpec("embedding_batch_size", "Batch-størrelse", "Embeddings", "number",
+              "Antall tekster per kall. 64 er en god default for begge providere."),
 
     # ─── Pinecone ────────────────────────────────────────────────────
     FieldSpec("pinecone_api_key", "Pinecone API-nøkkel", "Pinecone", "password",
-              "Brukes til å skrive embeddings til indeksen.",
+              "Brukes til å skrive embeddings til indeksene.",
               requires_restart=True),
-    FieldSpec("pinecone_index", "Indeksnavn", "Pinecone", "text",
-              "Navnet på Pinecone-indeksen. Må eksistere fra før (kjør bootstrap).",
+    FieldSpec("pinecone_index_openai", "Indeks for OpenAI", "Pinecone", "text",
+              "Indeksnavn for OpenAI-vektorer. Må eksistere — kjør bootstrap-script.",
               requires_restart=True),
+    FieldSpec("pinecone_index_gemini", "Indeks for Gemini", "Pinecone", "text",
+              "Separat indeks for Gemini-vektorer (kan ha annen dim).",
+              requires_restart=True),
+    FieldSpec("pinecone_index", "Legacy: enkelt indeksnavn", "Pinecone", "text",
+              "Beholdt for bakoverkompatibilitet. Brukes som fallback for OpenAI hvis pinecone_index_openai er blank.",
+              advanced=True, requires_restart=True),
     FieldSpec("pinecone_namespace", "Namespace (valgfritt)", "Pinecone", "text",
               "Hvis blank brukes drive_id som namespace per drive (anbefalt)."),
 

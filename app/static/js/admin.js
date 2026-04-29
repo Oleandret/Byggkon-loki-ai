@@ -15,6 +15,7 @@
       );
       if (target === "runs") loadRuns();
       if (target === "settings") loadSettings();
+      if (target === "health") loadHealth();
     });
   });
 
@@ -363,6 +364,76 @@
       btn.disabled = false;
     }
   });
+
+  // ─── Health (Systemstatus) ───────────────────────────────────────
+  const HEALTH_LABELS = {
+    application: "Applikasjon",
+    graph: "Microsoft Graph",
+    openai: "OpenAI Embeddings",
+    gemini: "Gemini Embedding 2",
+    pinecone_openai: "Pinecone — OpenAI-indeks",
+    pinecone_gemini: "Pinecone — Gemini-indeks",
+    state_db: "State-database (SQLite)",
+    disk: "Disk / volume",
+    scheduler: "Scheduler",
+    sync_history: "Synkroniserings­historikk",
+  };
+
+  let _healthAutoTimer = null;
+
+  async function loadHealth() {
+    const grid = document.getElementById("health-grid");
+    const overall = document.getElementById("health-overall");
+    const updated = document.getElementById("health-updated");
+    grid.innerHTML = `<p class="muted">Tester…</p>`;
+    overall.textContent = "Tester…";
+    overall.dataset.state = "";
+
+    try {
+      const r = await api("GET", "/api/health");
+      overall.textContent =
+        r.overall === "ok" ? "Alt OK" : r.overall === "warn" ? "Advarsler" : "Feil";
+      overall.dataset.state = r.overall;
+      updated.textContent = `Oppdatert ${new Date(r.generated_at * 1000).toLocaleTimeString("nb-NO")}`;
+
+      grid.innerHTML = Object.entries(HEALTH_LABELS)
+        .map(([key, label]) => {
+          const c = r.checks[key] || { status: "err", detail: "Mangler", ms: 0 };
+          return `
+            <article class="health-card health-${c.status}">
+              <div class="health-card-head">
+                <span class="health-dot"></span>
+                <h3>${escapeHtml(label)}</h3>
+                <span class="health-ms">${c.ms ?? 0} ms</span>
+              </div>
+              <p class="health-detail">${escapeHtml(c.detail || "—")}</p>
+            </article>`;
+        })
+        .join("");
+    } catch (e) {
+      grid.innerHTML = `<p class="err">Feil: ${escapeHtml(e.message)}</p>`;
+      overall.textContent = "Feil";
+      overall.dataset.state = "err";
+    }
+  }
+
+  document.getElementById("health-refresh-btn")?.addEventListener("click", loadHealth);
+
+  // Auto-refresh while the Systemstatus tab is active.
+  function maybeStartHealthAutoRefresh() {
+    const isActive = document
+      .querySelector('[data-tab-pane="health"]')
+      ?.classList.contains("is-active");
+    if (isActive && !_healthAutoTimer) {
+      _healthAutoTimer = setInterval(loadHealth, 30000);
+    } else if (!isActive && _healthAutoTimer) {
+      clearInterval(_healthAutoTimer);
+      _healthAutoTimer = null;
+    }
+  }
+  $$(".admin-tab").forEach((tab) =>
+    tab.addEventListener("click", () => setTimeout(maybeStartHealthAutoRefresh, 50))
+  );
 
   // ─── Init ─────────────────────────────────────────────────────────
   loadStats();

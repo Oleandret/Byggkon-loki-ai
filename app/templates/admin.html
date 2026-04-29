@@ -10,6 +10,7 @@
 
       <nav class="admin-nav">
         <button data-tab="dashboard" class="admin-tab is-active">Oversikt</button>
+        <button data-tab="health" class="admin-tab">Systemstatus</button>
         <button data-tab="settings" class="admin-tab">Innstillinger</button>
         <button data-tab="runs" class="admin-tab">Kjøringer</button>
         <button data-tab="tests" class="admin-tab">Test tilkoblinger</button>
@@ -61,6 +62,26 @@
           <li>Bruk <em>Test tilkoblinger</em> for å bekrefte at Graph, OpenAI og Pinecone svarer.</li>
           <li>Se <em>Kjøringer</em> for historikk og feilmeldinger.</li>
         </ul>
+      </div>
+    </section>
+
+    <!-- ─── Tab: Health ────────────────────────────────── -->
+    <section class="tab-pane" data-tab-pane="health">
+      <header class="pane-head">
+        <p class="eyebrow">Diagnose</p>
+        <h1 class="heading-xl">Systemstatus</h1>
+        <p class="muted">
+          Helsesjekk på alle integrasjoner. Auto-oppdaterer hvert 30. sekund.
+        </p>
+        <div class="health-actions">
+          <button id="health-refresh-btn" class="btn btn-primary">Test alt nå</button>
+          <span id="health-overall" class="health-overall">—</span>
+          <span id="health-updated" class="muted small">Ikke kjørt ennå</span>
+        </div>
+      </header>
+
+      <div id="health-grid" class="health-grid">
+        <p class="muted">Laster…</p>
       </div>
     </section>
 
@@ -142,6 +163,16 @@
           </div>
           <p class="muted small">Embedder en kort teststreng med valgt modell.</p>
           <button class="btn btn-secondary" data-test="openai">Test OpenAI</button>
+          <pre class="test-output"></pre>
+        </div>
+
+        <div class="test-card" id="test-gemini">
+          <div class="test-head">
+            <h3>Gemini Embedding 2</h3>
+            <span class="test-status">—</span>
+          </div>
+          <p class="muted small">Multimodal embedding — samme vektorrom for tekst og bilder.</p>
+          <button class="btn btn-secondary" data-test="gemini">Test Gemini</button>
           <pre class="test-output"></pre>
         </div>
 

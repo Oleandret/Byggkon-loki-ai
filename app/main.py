@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 from . import admin_routes
 from .auth import AuthManager, set_auth_manager
 from .config import Settings, get_settings
-from .embeddings import Embedder
+from .embeddings import BaseEmbedder, build_embedders
 from .graph_client import GraphClient
 from .logging_config import configure_logging, get_logger
 from .pinecone_store import PineconeStore
@@ -42,7 +42,7 @@ class AppState:
     settings_store: SettingsStore
     state: StateStore
     graph: GraphClient
-    embedder: Embedder
+    embedders: dict[str, BaseEmbedder]  # provider -> embedder
     pinecone: PineconeStore
     orchestrator: SyncOrchestrator
     scheduler: AsyncIOScheduler
@@ -112,18 +112,18 @@ async def lifespan(app: FastAPI):
             return None
 
     _state.graph = _safe("graph", lambda: GraphClient(_state.settings))
-    _state.embedder = _safe("openai", lambda: Embedder(_state.settings))
+    _state.embedders = _safe("embedders", lambda: build_embedders(_state.settings)) or {}
     _state.pinecone = _safe("pinecone", lambda: PineconeStore(_state.settings))
 
-    if all([_state.graph, _state.embedder, _state.pinecone]):
+    if _state.graph and _state.embedders and _state.pinecone:
         _state.orchestrator = SyncOrchestrator(
-            _state.settings, _state.graph, _state.embedder, _state.pinecone, _state.state
+            _state.settings, _state.graph, _state.embedders, _state.pinecone, _state.state
         )
     else:
         _state.orchestrator = None
         log.warning(
             "orchestrator.disabled",
-            hint="Set GRAPH_*/OPENAI_*/PINECONE_* env vars or fill in /admin to enable.",
+            hint="Configure Graph + at least one embedding provider + Pinecone in /admin to enable.",
         )
 
     # Auth manager always reads the *current* settings.

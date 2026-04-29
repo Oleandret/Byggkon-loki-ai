@@ -25,6 +25,12 @@ class UnstructuredStrategy(str, Enum):
     HI_RES = "hi_res"
 
 
+class EmbeddingProvider(str, Enum):
+    OPENAI = "openai"
+    GEMINI = "gemini"
+    BOTH = "both"  # write to both providers' indexes in parallel
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -54,15 +60,33 @@ class Settings(BaseSettings):
     sync_cron: str = ""
     sync_on_startup: bool = True
 
+    # ─── Embedding provider selector ─────────────────────────────────
+    # 'openai'  → write only to OpenAI index
+    # 'gemini'  → write only to Gemini index
+    # 'both'    → embed each chunk with both, write to both indexes
+    embedding_provider: EmbeddingProvider = EmbeddingProvider.OPENAI
+
     # OpenAI (optional default so admin UI can come up first)
     openai_api_key: str = ""
     openai_embedding_model: str = "text-embedding-3-large"
     openai_embedding_dimensions: int = 3072
     embedding_batch_size: int = 64
 
+    # Gemini (Google AI Studio API key path; Vertex AI may be added later)
+    gemini_api_key: str = ""
+    gemini_embedding_model: str = "gemini-embedding-2-preview"
+    gemini_embedding_dimensions: int = 3072  # 128/768/1536/3072 supported
+    gemini_embed_images: bool = True  # send Image elements as bytes
+
     # Pinecone (optional default so admin UI can come up first)
     pinecone_api_key: str = ""
+    # Legacy single-index name; used as fallback for OpenAI index when
+    # pinecone_index_openai is empty (back-compat with v1 deploys).
     pinecone_index: str = ""
+    # Per-provider index names. Different providers can run different dims;
+    # we keep them separate even when they happen to match.
+    pinecone_index_openai: str = ""
+    pinecone_index_gemini: str = ""
     pinecone_namespace: str = ""
 
     # Unstructured
@@ -100,6 +124,18 @@ class Settings(BaseSettings):
 
     def drive_ids_list(self) -> list[str]:
         return [d.strip() for d in self.sync_drive_ids.split(",") if d.strip()]
+
+    def resolved_openai_index(self) -> str:
+        """Use the explicit OpenAI index name, fall back to legacy pinecone_index."""
+        return self.pinecone_index_openai or self.pinecone_index
+
+    def resolved_gemini_index(self) -> str:
+        return self.pinecone_index_gemini
+
+    def providers(self) -> list[str]:
+        if self.embedding_provider == EmbeddingProvider.BOTH:
+            return ["openai", "gemini"]
+        return [self.embedding_provider.value]
 
     @property
     def graph_authority_url(self) -> str:

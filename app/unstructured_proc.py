@@ -38,6 +38,20 @@ class Chunk:
     metadata: dict = field(default_factory=dict)
 
 
+@dataclass
+class ImageBlob:
+    """A raw image extracted from a document, for multimodal embedding."""
+    data: bytes
+    mime: str
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
+class ParseResult:
+    chunks: list[Chunk] = field(default_factory=list)
+    images: list[ImageBlob] = field(default_factory=list)
+
+
 def _pick_strategy(file_path: str, configured: UnstructuredStrategy) -> str:
     if configured != UnstructuredStrategy.AUTO:
         return configured.value
@@ -52,11 +66,17 @@ def is_supported_extension(file_name: str) -> bool:
     return ext in _HI_RES_EXT or ext in _FAST_OK_EXT
 
 
-def partition_and_chunk(file_path: str, settings: Settings) -> list[Chunk]:
-    """Partition a single file and return chunked Chunk objects.
+def partition_and_chunk(
+    file_path: str,
+    settings: Settings,
+    *,
+    extract_images: bool = False,
+) -> ParseResult:
+    """Partition a single file. Returns a ParseResult holding text chunks
+    and optionally raw image blobs (for multimodal providers).
 
-    Raises on truly unrecoverable errors. Returns [] for files we explicitly
-    skip (e.g. unsupported binary types).
+    Raises on truly unrecoverable errors. Returns an empty ParseResult for
+    files we explicitly skip.
     """
     # Local imports — see module docstring.
     from unstructured.chunking.title import chunk_by_title
@@ -64,26 +84,33 @@ def partition_and_chunk(file_path: str, settings: Settings) -> list[Chunk]:
 
     if not is_supported_extension(file_path):
         log.info("unstructured.skip.unsupported", file=os.path.basename(file_path))
-        return []
+        return ParseResult()
 
     strategy = _pick_strategy(file_path, settings.unstructured_strategy)
     log.info(
         "unstructured.partition.start",
         file=os.path.basename(file_path),
         strategy=strategy,
+        extract_images=extract_images,
     )
 
-    try:
-        elements = partition(
-            filename=file_path,
-            strategy=strategy,
-            # Keep page numbers and other useful metadata where possible.
-            include_page_breaks=True,
-            # OCR languages — adjust for your tenant. eng+nor covers most.
-            languages=["eng", "nor"],
+    partition_kwargs = dict(
+        filename=file_path,
+        strategy=strategy,
+        include_page_breaks=True,
+        languages=["eng", "nor"],
+    )
+    if extract_images and strategy == "hi_res":
+        # Ask Unstructured to keep image elements with payloads (b64 by default).
+        partition_kwargs.update(
+            extract_images_in_pdf=True,
+            extract_image_block_types=["Image", "Table"],
+            extract_image_block_to_payload=True,
         )
+
+    try:
+        elements = partition(**partition_kwargs)
     except Exception as e:  # noqa: BLE001
-        # Some hi_res calls fail on weird PDFs; fall back to 'fast' once.
         if strategy == "hi_res":
             log.warning(
                 "unstructured.hi_res.fallback",
@@ -95,9 +122,18 @@ def partition_and_chunk(file_path: str, settings: Settings) -> list[Chunk]:
             raise
 
     if not elements:
-        return []
+        return ParseResult()
 
-    chunks = chunk_by_title(
+    # Pull out image blobs *before* chunk_by_title (which collapses Image
+    # elements into surrounding text).
+    images: list[ImageBlob] = []
+    if extract_images:
+        for el in elements:
+            blob = _image_blob_from(el)
+            if blob:
+                images.append(blob)
+
+    chunks_raw = chunk_by_title(
         elements,
         max_characters=settings.unstructured_chunk_max_chars,
         new_after_n_chars=int(settings.unstructured_chunk_max_chars * 0.9),
@@ -105,14 +141,13 @@ def partition_and_chunk(file_path: str, settings: Settings) -> list[Chunk]:
         combine_text_under_n_chars=200,
     )
 
-    out: list[Chunk] = []
-    for el in chunks:
+    chunks: list[Chunk] = []
+    for el in chunks_raw:
         text = (el.text or "").strip()
         if not text:
             continue
         md_obj = el.metadata
         md = md_obj.to_dict() if hasattr(md_obj, "to_dict") else {}
-        # Prune fields that aren't useful in Pinecone metadata and can be huge.
         for noisy in (
             "coordinates",
             "links",
@@ -120,17 +155,50 @@ def partition_and_chunk(file_path: str, settings: Settings) -> list[Chunk]:
             "parent_id",
             "orig_elements",
             "text_as_html",
+            "image_base64",
         ):
             md.pop(noisy, None)
-        out.append(Chunk(text=text, metadata=_flatten_metadata(md)))
+        chunks.append(Chunk(text=text, metadata=_flatten_metadata(md)))
 
     log.info(
         "unstructured.partition.done",
         file=os.path.basename(file_path),
         elements=len(elements),
-        chunks=len(out),
+        chunks=len(chunks),
+        images=len(images),
     )
-    return out
+    return ParseResult(chunks=chunks, images=images)
+
+
+def _image_blob_from(el) -> ImageBlob | None:
+    """Convert an Unstructured Image element with embedded payload to ImageBlob.
+
+    Unstructured stores the bytes as base64 in element.metadata.image_base64
+    when extract_image_block_to_payload=True. We decode and pair with the
+    detected mime type (default to PNG).
+    """
+    try:
+        category = getattr(el, "category", None) or el.__class__.__name__
+        if category not in ("Image", "Table", "FigureCaption"):
+            return None
+        md_obj = el.metadata
+        md = md_obj.to_dict() if hasattr(md_obj, "to_dict") else {}
+        b64 = md.get("image_base64")
+        if not b64:
+            return None
+        import base64
+        data = base64.b64decode(b64)
+        mime = md.get("image_mime_type") or "image/png"
+        # Light cleanup for the metadata we keep.
+        clean = {
+            "category": category,
+            "page_number": md.get("page_number"),
+            "filetype": md.get("filetype"),
+        }
+        return ImageBlob(data=data, mime=mime, metadata={k: v for k, v in clean.items() if v is not None})
+    except Exception as e:  # noqa: BLE001
+        log.warning("unstructured.image_blob.error", err=str(e))
+        return None
 
 
 def _flatten_metadata(md: dict) -> dict:

@@ -1,7 +1,9 @@
-"""Per-file pipeline: download -> unstructured -> embed -> upsert to Pinecone.
+"""Per-file pipeline: download → unstructured → embed → upsert.
 
-Concurrency: this module is intentionally I/O-async, but the unstructured
-partition step is CPU/IO heavy and sync — we run it in a thread.
+Supports multiple embedding providers writing to per-provider Pinecone
+indexes in parallel. Image blobs (when extracted) are embedded directly
+by multimodal providers (Gemini); text-only providers (OpenAI) get only
+text chunks.
 """
 from __future__ import annotations
 
@@ -16,7 +18,7 @@ from typing import Optional
 
 from .config import Settings
 from .drive_discovery import DriveRef
-from .embeddings import Embedder
+from .embeddings import BaseEmbedder
 from .graph_client import GraphClient
 from .logging_config import get_logger
 from .pinecone_store import PineconeStore
@@ -31,6 +33,7 @@ class ProcessResult:
     file_id: str
     indexed: bool
     chunk_count: int = 0
+    image_count: int = 0
     skipped_reason: Optional[str] = None
     error: Optional[str] = None
 
@@ -40,57 +43,48 @@ class Processor:
         self,
         settings: Settings,
         graph: GraphClient,
-        embedder: Embedder,
+        embedders: dict[str, BaseEmbedder],
         pinecone: PineconeStore,
         state: StateStore,
     ) -> None:
         self._settings = settings
         self._graph = graph
-        self._embedder = embedder
+        self._embedders = embedders  # provider -> BaseEmbedder
         self._pinecone = pinecone
         self._state = state
         os.makedirs(settings.tmp_dir, exist_ok=True)
 
-    async def process_file(
-        self, drive: DriveRef, item: dict
-    ) -> ProcessResult:
-        """Index or re-index a single driveItem."""
+    @property
+    def has_multimodal(self) -> bool:
+        return any("image" in e.capabilities for e in self._embedders.values())
+
+    async def process_file(self, drive: DriveRef, item: dict) -> ProcessResult:
         file_id = item["id"]
         file_name = item.get("name", "<unknown>")
         size = int(item.get("size") or 0)
         last_modified = item.get("lastModifiedDateTime", "")
         web_url = item.get("webUrl")
 
-        # Fast skips
         if "folder" in item:
             return ProcessResult(file_id=file_id, indexed=False, skipped_reason="folder")
         if not is_supported_extension(file_name):
             return ProcessResult(file_id=file_id, indexed=False, skipped_reason="unsupported_ext")
         if size > self._settings.max_file_bytes:
-            log.info(
-                "process.skip.too_large",
-                file=file_name,
-                size=size,
-                max=self._settings.max_file_bytes,
-            )
+            log.info("process.skip.too_large", file=file_name, size=size)
             return ProcessResult(file_id=file_id, indexed=False, skipped_reason="too_large")
 
-        # Skip if already up to date (compare lastModifiedDateTime)
         existing = self._state.get_file_record(drive.drive_id, file_id)
         if existing and existing.last_modified == last_modified and existing.last_modified:
             return ProcessResult(file_id=file_id, indexed=False, skipped_reason="unchanged")
 
         namespace = self._pinecone.namespace_for_drive(drive.drive_id)
 
-        # ─── Download to a tempfile ───────────────────────────────────
         suffix = os.path.splitext(file_name)[1] or ""
         local_dir = tempfile.mkdtemp(dir=self._settings.tmp_dir, prefix="item_")
         local_path = os.path.join(local_dir, f"file{suffix}")
         try:
             content_hash = await self._download(drive.drive_id, file_id, local_path)
 
-            # If we have a prior content hash and it matches, just refresh
-            # the lastModified bookkeeping — content is identical.
             if existing and existing.content_hash == content_hash:
                 self._state.upsert_file_record(
                     FileVectorRecord(
@@ -106,13 +100,12 @@ class Processor:
                     file_id=file_id, indexed=False, skipped_reason="content_unchanged"
                 )
 
-            # ─── Partition + chunk (sync, in a thread) ────────────────
-            chunks = await asyncio.to_thread(
-                partition_and_chunk, local_path, self._settings
+            extract_images = self.has_multimodal and self._settings.gemini_embed_images
+            parsed = await asyncio.to_thread(
+                partition_and_chunk, local_path, self._settings, extract_images=extract_images
             )
-            if not chunks:
-                # File parsed to nothing useful — still record it so we don't
-                # re-attempt it every cycle.
+
+            if not parsed.chunks and not parsed.images:
                 self._state.upsert_file_record(
                     FileVectorRecord(
                         file_id=file_id,
@@ -127,13 +120,6 @@ class Processor:
                     file_id=file_id, indexed=False, skipped_reason="empty_after_parse"
                 )
 
-            # ─── Embed ────────────────────────────────────────────────
-            texts = [c.text for c in chunks]
-            vectors = await self._embedder.embed(texts)
-
-            # ─── Build upsert payload ─────────────────────────────────
-            new_ids: list[str] = []
-            payload: list[tuple[str, list[float], dict]] = []
             base_meta = {
                 "drive_id": drive.drive_id,
                 "drive_type": drive.drive_type,
@@ -145,22 +131,72 @@ class Processor:
                 "last_modified": last_modified,
                 "mime_type": _mime(item),
             }
-            for i, (chunk, vec) in enumerate(zip(chunks, vectors)):
-                vid = f"{file_id}::{i}::{uuid.uuid4().hex[:8]}"
-                meta = {
-                    **base_meta,
-                    **chunk.metadata,
-                    "chunk_index": i,
-                    "text": chunk.text,  # store text for retrieval-time display
-                }
-                payload.append((vid, vec, meta))
-                new_ids.append(vid)
 
-            # ─── Delete old chunks (if any) before upserting new ones ─
+            # Delete prior vectors across whatever providers we've written to,
+            # before upserting fresh ones.
             if existing and existing.vector_ids:
-                await self._pinecone.delete_ids(namespace, existing.vector_ids)
+                # vector_ids stored as list of "provider::vid" strings (new schema)
+                # or plain ids (legacy single-provider schema). Handle both.
+                by_provider: dict[str, list[str]] = {}
+                for raw in existing.vector_ids:
+                    if "::" in raw and raw.split("::", 1)[0] in {"openai", "gemini"}:
+                        prov, vid = raw.split("::", 1)
+                        by_provider.setdefault(prov, []).append(vid)
+                    else:
+                        # legacy: treat as openai
+                        by_provider.setdefault("openai", []).append(raw)
+                for prov, ids in by_provider.items():
+                    await self._pinecone.delete_ids_for(prov, namespace, ids)
 
-            await self._pinecone.upsert(namespace, payload)
+            new_ids: list[str] = []
+            text_count = 0
+            image_count = 0
+
+            # ─── Per provider: embed and upsert ───────────────────────
+            for prov, embedder in self._embedders.items():
+                # Texts
+                if parsed.chunks and "text" in embedder.capabilities:
+                    texts = [c.text for c in parsed.chunks]
+                    text_vecs = await embedder.embed_texts(texts)
+                    payload: list[tuple[str, list[float], dict]] = []
+                    for i, (chunk, vec) in enumerate(zip(parsed.chunks, text_vecs)):
+                        vid = f"text::{file_id}::{i}::{uuid.uuid4().hex[:6]}"
+                        meta = {
+                            **base_meta,
+                            **chunk.metadata,
+                            "modality": "text",
+                            "chunk_index": i,
+                            "text": chunk.text,
+                            "embedding_provider": prov,
+                        }
+                        payload.append((vid, vec, meta))
+                        new_ids.append(f"{prov}::{vid}")
+                    await self._pinecone.upsert_for(prov, namespace, payload)
+                    text_count = len(parsed.chunks)
+
+                # Images (only multimodal providers)
+                if parsed.images and "image" in embedder.capabilities:
+                    image_payload: list[tuple[str, list[float], dict]] = []
+                    for j, blob in enumerate(parsed.images):
+                        try:
+                            vec = await embedder.embed_image(blob.data, blob.mime)
+                        except Exception as e:  # noqa: BLE001
+                            log.warning("process.image_embed.error", file=file_name, err=str(e))
+                            continue
+                        vid = f"image::{file_id}::{j}::{uuid.uuid4().hex[:6]}"
+                        meta = {
+                            **base_meta,
+                            **blob.metadata,
+                            "modality": "image",
+                            "image_index": j,
+                            "image_mime": blob.mime,
+                            "embedding_provider": prov,
+                        }
+                        image_payload.append((vid, vec, meta))
+                        new_ids.append(f"{prov}::{vid}")
+                    if image_payload:
+                        await self._pinecone.upsert_for(prov, namespace, image_payload)
+                    image_count = len(parsed.images)
 
             self._state.upsert_file_record(
                 FileVectorRecord(
@@ -175,27 +211,42 @@ class Processor:
             log.info(
                 "process.indexed",
                 file=file_name,
-                chunks=len(new_ids),
+                chunks=text_count,
+                images=image_count,
+                providers=list(self._embedders.keys()),
                 drive=drive.owner_label,
             )
-            return ProcessResult(file_id=file_id, indexed=True, chunk_count=len(new_ids))
+            return ProcessResult(
+                file_id=file_id,
+                indexed=True,
+                chunk_count=text_count,
+                image_count=image_count,
+            )
 
         finally:
             shutil.rmtree(local_dir, ignore_errors=True)
 
     async def handle_deletion(self, drive: DriveRef, file_id: str) -> ProcessResult:
-        """Remove a file's vectors when delta reports it deleted."""
         existing = self._state.get_file_record(drive.drive_id, file_id)
         if not existing:
             return ProcessResult(file_id=file_id, indexed=False, skipped_reason="unknown_delete")
-        await self._pinecone.delete_ids(existing.namespace, existing.vector_ids)
+
+        # Group by provider as in process_file().
+        by_provider: dict[str, list[str]] = {}
+        for raw in existing.vector_ids:
+            if "::" in raw and raw.split("::", 1)[0] in {"openai", "gemini"}:
+                prov, vid = raw.split("::", 1)
+                by_provider.setdefault(prov, []).append(vid)
+            else:
+                by_provider.setdefault("openai", []).append(raw)
+        for prov, ids in by_provider.items():
+            await self._pinecone.delete_ids_for(prov, existing.namespace, ids)
+
         self._state.delete_file_record(drive.drive_id, file_id)
         log.info("process.deleted", file_id=file_id, drive=drive.owner_label)
         return ProcessResult(file_id=file_id, indexed=False, skipped_reason="deleted")
 
-    # ─── helpers ──────────────────────────────────────────────────────
     async def _download(self, drive_id: str, item_id: str, dest: str) -> str:
-        """Stream-download item content; return sha256 hex digest."""
         h = hashlib.sha256()
         async with self._graph.stream_drive_item(drive_id, item_id) as resp:
             with open(dest, "wb") as f:
@@ -210,7 +261,6 @@ def _path_str(item: dict) -> str:
     parent_path = parent.get("path", "") or ""
     name = item.get("name", "")
     if parent_path:
-        # parent path looks like "/drive/root:/Folder/Sub"
         return f"{parent_path}/{name}"
     return name
 

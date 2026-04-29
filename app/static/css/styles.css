@@ -492,6 +492,49 @@ code { background: var(--obsidian-soft); padding: 1px 6px; border-radius: 4px; }
 }
 .test-output.is-shown { display: block; }
 
+/* ─── Health / Systemstatus ──────────────────────────────────────── */
+.health-actions {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-top: 14px;
+}
+.health-overall {
+  padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  background: var(--grey-100); color: var(--grey-700);
+}
+.health-overall[data-state="ok"]   { background: var(--green-dim); color: var(--green); }
+.health-overall[data-state="warn"] { background: var(--cream-dim); color: #b07a14; }
+.health-overall[data-state="err"]  { background: var(--rose-dim);  color: #b03030; }
+
+.health-grid {
+  margin-top: 24px; display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.health-card {
+  background: var(--white); border: 1px solid var(--obsidian-dim);
+  border-left: 4px solid var(--grey-200);
+  border-radius: var(--radius); padding: 16px 18px;
+  transition: box-shadow 0.18s, border-color 0.18s;
+}
+.health-card:hover { box-shadow: var(--shadow-sm); }
+.health-ok   { border-left-color: var(--green); }
+.health-warn { border-left-color: #d99a2c; }
+.health-err  { border-left-color: #b03030; }
+
+.health-card-head {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 14px; font-weight: 600;
+}
+.health-card-head h3 { margin: 0; flex: 1; font-size: 14px; font-weight: 600; letter-spacing: -0.005em; }
+.health-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--grey-300);
+}
+.health-ok   .health-dot { background: var(--green); box-shadow: 0 0 0 3px rgba(30, 139, 111, 0.18); }
+.health-warn .health-dot { background: #d99a2c; box-shadow: 0 0 0 3px rgba(217, 154, 44, 0.18); }
+.health-err  .health-dot { background: #b03030; box-shadow: 0 0 0 3px rgba(176, 48, 48, 0.18); }
+.health-ms { font-size: 11px; color: var(--grey-500); font-family: var(--font-mono); }
+.health-detail { margin: 8px 0 0; font-size: 13px; color: var(--grey-700); }
+
 /* ─── Footer ─────────────────────────────────────────────────────── */
 .footer {
   margin-top: 80px;

@@ -28,6 +28,7 @@ pikepdf==9.4.2
 
 # Embeddings + vector DB
 openai==1.57.4
+google-genai==1.20.0
 pinecone-client==5.0.1
 
 # Crypto for at-rest secret encryption
