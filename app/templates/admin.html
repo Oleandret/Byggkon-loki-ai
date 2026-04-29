@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Innstillinger — {{ brand_name }}{% endblock %}
+
+{% block content %}
+<section class="admin-shell">
+  <aside class="admin-sidebar">
+    <div class="admin-sidebar-inner">
+      <p class="eyebrow">Konsoll</p>
+      <h2 class="heading-sm">Kontroll&shy;panel</h2>
+
+      <nav class="admin-nav">
+        <button data-tab="dashboard" class="admin-tab is-active">Oversikt</button>
+        <button data-tab="settings" class="admin-tab">Innstillinger</button>
+        <button data-tab="runs" class="admin-tab">Kjøringer</button>
+        <button data-tab="tests" class="admin-tab">Test tilkoblinger</button>
+      </nav>
+
+      <div class="admin-sidebar-actions">
+        <button id="run-sync-btn" class="btn btn-primary btn-block">Kjør synkronisering nå</button>
+        <p class="muted small" id="run-sync-status">Klikk for å trigge en runde umiddelbart.</p>
+      </div>
+    </div>
+  </aside>
+
+  <div class="admin-main">
+
+    <!-- ─── Tab: Dashboard ─────────────────────────────── -->
+    <section class="tab-pane is-active" data-tab-pane="dashboard">
+      <header class="pane-head">
+        <p class="eyebrow">Oversikt</p>
+        <h1 class="heading-xl">{{ brand_name }} — status</h1>
+      </header>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Indekserte filer</span>
+          <span class="kpi-value" id="kpi-indexed-files">—</span>
+          <span class="kpi-sub" id="kpi-tracked-drives">—</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Pinecone-vektorer</span>
+          <span class="kpi-value" id="kpi-vectors">—</span>
+          <span class="kpi-sub">på tvers av alle namespaces</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Siste kjøring</span>
+          <span class="kpi-value" id="kpi-last-run">—</span>
+          <span class="kpi-sub" id="kpi-last-run-detail">—</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Feil siste kjøring</span>
+          <span class="kpi-value" id="kpi-last-errors">—</span>
+          <span class="kpi-sub">se Kjøringer for detaljer</span>
+        </div>
+      </div>
+
+      <div class="card-soft mt-l">
+        <h3>Hva nå?</h3>
+        <ul class="bullet">
+          <li>Sjekk <em>Innstillinger</em> for å gå over konfigurasjonen.</li>
+          <li>Bruk <em>Test tilkoblinger</em> for å bekrefte at Graph, OpenAI og Pinecone svarer.</li>
+          <li>Se <em>Kjøringer</em> for historikk og feilmeldinger.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ─── Tab: Settings ──────────────────────────────── -->
+    <section class="tab-pane" data-tab-pane="settings">
+      <header class="pane-head">
+        <p class="eyebrow">Konfigurasjon</p>
+        <h1 class="heading-xl">Innstillinger</h1>
+        <p class="muted">
+          Endringer lagres umiddelbart. Felt merket med <span class="badge badge-warn">restart</span>
+          krever at containeren startes på nytt for å ta effekt.
+        </p>
+        <label class="toggle-advanced">
+          <input type="checkbox" id="show-advanced" />
+          <span>Vis avanserte felt</span>
+        </label>
+      </header>
+
+      <div id="settings-form" class="settings-form">
+        <p class="muted">Laster…</p>
+      </div>
+
+      <div class="settings-actions">
+        <button id="save-settings-btn" class="btn btn-primary">Lagre endringer</button>
+        <span id="save-status" class="muted small"></span>
+      </div>
+    </section>
+
+    <!-- ─── Tab: Runs ──────────────────────────────────── -->
+    <section class="tab-pane" data-tab-pane="runs">
+      <header class="pane-head">
+        <p class="eyebrow">Audit log</p>
+        <h1 class="heading-xl">Kjøringer</h1>
+        <p class="muted">De siste 20 synkroniserings&shy;kjøringene.</p>
+      </header>
+
+      <div class="table-wrap">
+        <table class="data-table" id="runs-table">
+          <thead>
+            <tr>
+              <th>Start</th>
+              <th>Varighet</th>
+              <th>Drives</th>
+              <th>Indeksert</th>
+              <th>Slettet</th>
+              <th>Hoppet over</th>
+              <th>Feil</th>
+              <th>Notat</th>
+            </tr>
+          </thead>
+          <tbody><tr><td colspan="8" class="muted">Laster…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── Tab: Tests ─────────────────────────────────── -->
+    <section class="tab-pane" data-tab-pane="tests">
+      <header class="pane-head">
+        <p class="eyebrow">Tilkoblinger</p>
+        <h1 class="heading-xl">Test tilkoblinger</h1>
+        <p class="muted">Verifiser at hver tjeneste svarer med gjeldende innstillinger.</p>
+      </header>
+
+      <div class="test-grid">
+        <div class="test-card" id="test-graph">
+          <div class="test-head">
+            <h3>Microsoft Graph</h3>
+            <span class="test-status">—</span>
+          </div>
+          <p class="muted small">Henter <code>/organization</code> for å verifisere tenant og rettigheter.</p>
+          <button class="btn btn-secondary" data-test="graph">Test Graph</button>
+          <pre class="test-output"></pre>
+        </div>
+
+        <div class="test-card" id="test-openai">
+          <div class="test-head">
+            <h3>OpenAI</h3>
+            <span class="test-status">—</span>
+          </div>
+          <p class="muted small">Embedder en kort teststreng med valgt modell.</p>
+          <button class="btn btn-secondary" data-test="openai">Test OpenAI</button>
+          <pre class="test-output"></pre>
+        </div>
+
+        <div class="test-card" id="test-pinecone">
+          <div class="test-head">
+            <h3>Pinecone</h3>
+            <span class="test-status">—</span>
+          </div>
+          <p class="muted small">Henter <code>describe_index_stats</code> fra valgt indeks.</p>
+          <button class="btn btn-secondary" data-test="pinecone">Test Pinecone</button>
+          <pre class="test-output"></pre>
+        </div>
+      </div>
+    </section>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/admin.js" defer></script>
+{% endblock %}

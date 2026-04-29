@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="nb-NO">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}{{ brand_name }} for {{ brand_owner }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner max-width">
+      <a class="brand" href="/">
+        <span class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 28 28" width="28" height="28">
+            <rect x="3" y="3" width="22" height="22" rx="6" fill="#030213"/>
+            <path d="M9 9h3v10H9V9zm5 5l5-5v10l-5-5z" fill="#1e8b6f"/>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-name">{{ brand_name }}</span>
+          <span class="brand-owner">for {{ brand_owner }}</span>
+        </span>
+      </a>
+      <nav class="nav">
+        <a href="/" class="nav-link {% if request.url.path == '/' %}is-active{% endif %}">Hjem</a>
+        <a href="/help" class="nav-link {% if request.url.path == '/help' %}is-active{% endif %}">Oppsett</a>
+        {% if is_logged_in %}
+          <a href="/admin" class="nav-link {% if request.url.path == '/admin' %}is-active{% endif %}">Innstillinger</a>
+          <form method="post" action="/logout" class="inline-form">
+            <button type="submit" class="btn btn-ghost">Logg ut</button>
+          </form>
+        {% else %}
+          <a href="/login" class="btn btn-primary">Logg inn</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main>{% block content %}{% endblock %}</main>
+
+  <footer class="footer">
+    <div class="footer-inner max-width">
+      <div class="footer-brand">
+        <span class="brand-name">{{ brand_name }}</span>
+        <span class="brand-owner">for {{ brand_owner }}</span>
+        <p class="footer-tagline">Privat AI-kunnskaps&shy;motor som leser, forstår og søker i alle dokumentene deres.</p>
+      </div>
+      <div class="footer-cols">
+        <div>
+          <h6>Snarveier</h6>
+          <a href="/">Hjem</a>
+          <a href="/help">Oppsett</a>
+          <a href="/admin">Innstillinger</a>
+        </div>
+        <div>
+          <h6>System</h6>
+          <a href="/healthz">Helsesjekk</a>
+          <a href="https://github.com/Byggkon/loki-ai" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom max-width">
+      <p>© {{ '2026' }} {{ brand_owner }}. Drevet av {{ brand_name }}.</p>
+    </div>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Oppsettsveileder — {{ brand_name }}{% endblock %}
+
+{% block content %}
+<section class="section section-light">
+  <div class="max-width">
+    <p class="eyebrow">Oppsett</p>
+    <h1 class="heading-xl">Sett opp {{ brand_name }} fra bunnen</h1>
+    <p class="lede-sm">
+      Følg stegene under i rekkefølge. Du må gjøre dette kun én gang per Microsoft 365-tenant.
+      Total tidsbruk: ca. 30 minutter.
+    </p>
+
+    <div class="help-toc">
+      <a href="#step-1">1. Microsoft Entra ID</a>
+      <a href="#step-2">2. OpenAI</a>
+      <a href="#step-3">3. Pinecone</a>
+      <a href="#step-4">4. Konfigurer {{ brand_name }}</a>
+      <a href="#step-5">5. Verifiser</a>
+      <a href="#troubleshooting">Feilsøking</a>
+    </div>
+  </div>
+</section>
+
+<section id="step-1" class="section">
+  <div class="max-width help-step">
+    <span class="step-tag">Steg 1</span>
+    <h2 class="heading-lg">Opprett app-registrering i Microsoft Entra ID</h2>
+    <p>
+      {{ brand_name }} bruker <strong>app-only client credentials</strong>-flyten — altså en egen
+      identitet for tjenesten, uten å låne en brukers kontekst. Dette er sikrest og krever ingen
+      pålogging fra brukerne.
+    </p>
+
+    <ol class="ordered-steps">
+      <li>Gå til <a href="https://entra.microsoft.com" target="_blank" rel="noopener">entra.microsoft.com</a> → <em>Applications → App registrations</em>.</li>
+      <li>Klikk <em>New registration</em>. Gi den et navn, f.eks. <code>{{ brand_name }} – {{ brand_owner }}</code>.</li>
+      <li>Velg <em>Accounts in this organizational directory only</em>. Hopp over Redirect URI.</li>
+      <li>Etter opprettelse: noter ned <strong>Application (client) ID</strong> og <strong>Directory (tenant) ID</strong>.</li>
+      <li>Gå til <em>Certificates &amp; secrets → New client secret</em>. Velg utløpstid og kopier verdien <strong>med en gang</strong> — den vises bare én gang.</li>
+      <li>
+        Gå til <em>API permissions → Add a permission → Microsoft Graph → Application permissions</em>
+        og legg til:
+        <ul class="bullet">
+          <li><code>Files.Read.All</code></li>
+          <li><code>User.Read.All</code></li>
+          <li><code>Sites.Read.All</code> <span class="muted">(bare hvis dere vil indeksere SharePoint-områder)</span></li>
+        </ul>
+      </li>
+      <li>Klikk <em>Grant admin consent for {{ brand_owner }}</em>. Uten dette får app-only-kall 403.</li>
+    </ol>
+
+    <div class="callout">
+      <strong>Sikrere variant:</strong> Bruk <code>Sites.Selected</code> i stedet for <code>Sites.Read.All</code>
+      og gi appen tilgang kun til spesifikke SharePoint-sider via en engangs PATCH mot
+      <code>/sites/{id}/permissions</code>. Trinn-for-trinn i Microsofts dokumentasjon.
+    </div>
+  </div>
+</section>
+
+<section id="step-2" class="section section-light">
+  <div class="max-width help-step">
+    <span class="step-tag">Steg 2</span>
+    <h2 class="heading-lg">OpenAI-konto og API-nøkkel</h2>
+    <ol class="ordered-steps">
+      <li>Logg inn på <a href="https://platform.openai.com" target="_blank" rel="noopener">platform.openai.com</a>.</li>
+      <li>Gå til <em>API keys → Create new secret key</em>. Kopier verdien.</li>
+      <li>Sjekk at kontoen har tilgang til <code>text-embedding-3-large</code> (alle paid-konti har det).</li>
+      <li>Sett en månedlig usage limit i <em>Limits</em> som passer med antall dokumenter dere har.</li>
+    </ol>
+
+    <div class="callout muted-callout">
+      <strong>Kostnad:</strong> ca. $0.13 per million tokens. 100 000 dokumenter på 5 sider hver
+      ≈ 50 millioner tokens ≈ $6,50 én gang. Oppdateringer er marginale.
+    </div>
+  </div>
+</section>
+
+<section id="step-3" class="section">
+  <div class="max-width help-step">
+    <span class="step-tag">Steg 3</span>
+    <h2 class="heading-lg">Pinecone-prosjekt og indeks</h2>
+    <ol class="ordered-steps">
+      <li>Opprett konto på <a href="https://app.pinecone.io" target="_blank" rel="noopener">app.pinecone.io</a>.</li>
+      <li>Lag et nytt <em>serverless</em>-prosjekt (AWS, region <code>us-east-1</code> er enklest).</li>
+      <li>Hent API-nøkkel fra <em>API Keys</em>.</li>
+      <li>
+        <strong>Ikke</strong> opprett indeksen manuelt. Etter at miljøvariablene er satt, kjør:
+        <pre class="codeblock">python -m scripts.bootstrap_pinecone --cloud aws --region us-east-1</pre>
+        Dette oppretter indeksen med <em>nøyaktig</em> riktig dimensjon (3072) og cosine-metric.
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="step-4" class="section section-light">
+  <div class="max-width help-step">
+    <span class="step-tag">Steg 4</span>
+    <h2 class="heading-lg">Konfigurer {{ brand_name }}</h2>
+    <p>Du har to alternativer:</p>
+
+    <div class="two-col">
+      <div class="card-soft">
+        <h3>A) Innstillinger-UI (anbefalt)</h3>
+        <p>
+          Logg inn med admin-passordet, åpne <a href="/admin">Innstillinger</a>, og fyll inn
+          felt for felt. Test-knapper bekrefter at hver tjeneste svarer.
+        </p>
+        <a class="btn btn-primary" href="/admin">Åpne innstillinger →</a>
+      </div>
+      <div class="card-soft">
+        <h3>B) Miljøvariabler i Railway</h3>
+        <p>
+          Sett <code>GRAPH_*</code>, <code>OPENAI_*</code>, <code>PINECONE_*</code>,
+          <code>ADMIN_PASSWORD</code> osv. i Railway-dashboardet. Se <code>.env.example</code>
+          i repoet for full liste.
+        </p>
+      </div>
+    </div>
+
+    <h3 class="mt-l">Påkrevde miljøvariabler</h3>
+    <table class="table">
+      <thead><tr><th>Variabel</th><th>Hva</th></tr></thead>
+      <tbody>
+        <tr><td><code>GRAPH_TENANT_ID</code></td><td>Directory (tenant) ID fra Entra</td></tr>
+        <tr><td><code>GRAPH_CLIENT_ID</code></td><td>Application (client) ID</td></tr>
+        <tr><td><code>GRAPH_CLIENT_SECRET</code></td><td>Client secret-verdien</td></tr>
+        <tr><td><code>OPENAI_API_KEY</code></td><td>OpenAI API-nøkkel</td></tr>
+        <tr><td><code>PINECONE_API_KEY</code></td><td>Pinecone API-nøkkel</td></tr>
+        <tr><td><code>PINECONE_INDEX</code></td><td>Indeksnavn (f.eks. <code>byggkon-knowledge</code>)</td></tr>
+        <tr><td><code>ADMIN_PASSWORD</code></td><td>Passord for å logge inn på dette UI-et</td></tr>
+        <tr><td><code>ADMIN_SESSION_SECRET</code></td><td>Lang tilfeldig streng (genereres automatisk om blank)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="step-5" class="section">
+  <div class="max-width help-step">
+    <span class="step-tag">Steg 5</span>
+    <h2 class="heading-lg">Verifiser at alt virker</h2>
+    <ol class="ordered-steps">
+      <li>Åpne <a href="/admin">Innstillinger</a> og bruk <em>Test tilkobling</em>-knappene for Graph, OpenAI og Pinecone.</li>
+      <li>Trykk <em>Kjør synkronisering nå</em>. Første runde kan ta lang tid på en stor tenant — det er normalt.</li>
+      <li>Sjekk <em>Kjøringer</em>-fanen for å se progresjon, indekserte filer og eventuelle feil.</li>
+      <li>Verifiser i Pinecone-konsollet at indeksen får vektorer.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="troubleshooting" class="section section-grey">
+  <div class="max-width">
+    <p class="eyebrow">Feilsøking</p>
+    <h2 class="heading-xl">Vanlige problemer</h2>
+
+    <details class="faq">
+      <summary>Graph-test feiler med 403 Forbidden</summary>
+      <p>
+        Du har sannsynligvis ikke gitt admin consent for <em>application permissions</em>.
+        Gå tilbake til Entra ID → API permissions og klikk <em>Grant admin consent</em>.
+      </p>
+    </details>
+    <details class="faq">
+      <summary>Pinecone-test feiler med "index not found"</summary>
+      <p>
+        Du må kjøre <code>python -m scripts.bootstrap_pinecone</code> én gang for å opprette
+        indeksen, eller du har skrevet feil indeksnavn i innstillingene.
+      </p>
+    </details>
+    <details class="faq">
+      <summary>OpenAI-test feiler med "model not found"</summary>
+      <p>
+        Sjekk at OpenAI-kontoen har <code>text-embedding-3-large</code> aktivert. Trial-konti
+        har den ikke alltid; du må ha gjort minst én betaling.
+      </p>
+    </details>
+    <details class="faq">
+      <summary>Synkronisering kjører, men ingen filer indekseres</summary>
+      <p>
+        Sjekk <em>SYNC_SCOPE</em>. Hvis den er <code>users_csv</code> uten verdi i
+        <em>SYNC_USERS</em>, blir det ingen drives å lese. Sett til <code>all_users</code>
+        for å hente alle.
+      </p>
+    </details>
+    <details class="faq">
+      <summary>"Delta-token utløpt"-meldinger</summary>
+      <p>
+        Helt normalt etter lang stillstand. {{ brand_name }} resetter automatisk og kjører
+        en full re-indeksering av den drivven på neste runde.
+      </p>
+    </details>
+    <details class="faq">
+      <summary>Containeren bruker mye disk</summary>
+      <p>
+        Imaget er ~3 GB pga. Unstructured + tesseract + libreoffice. Det er normalt for
+        self-hosted dokumentparsing. Kjør hosted Unstructured API hvis dere vil ha mindre.
+      </p>
+    </details>
+  </div>
+</section>
+{% endblock %}

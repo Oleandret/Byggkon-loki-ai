@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}{{ brand_name }} for {{ brand_owner }} — privat AI-kunnskapsmotor{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="max-width hero-inner">
+    <div class="hero-pill">
+      <span class="dot"></span>
+      <span>Privat AI-kunnskapsmotor for byggebransjen</span>
+    </div>
+    <h1 class="display">
+      All kunnskap fra OneDrive,<br />
+      <em>tilgjengelig som søk og samtale.</em>
+    </h1>
+    <p class="lede">
+      {{ brand_name }} synkroniserer kontinuerlig dokumenter, tegninger, rapporter og notater fra
+      hele {{ brand_owner }}s OneDrive- og SharePoint-arkiv inn i en privat AI-indeks. Resultatet er
+      et søk som forstår innholdet — ikke bare filnavnet.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary btn-lg" href="/help">Kom i gang →</a>
+      <a class="btn btn-ghost btn-lg" href="/admin">Åpne innstillinger</a>
+    </div>
+    <div class="hero-stats">
+      <div><span class="stat-num">100%</span><span class="stat-label">privat — data forlater aldri tenanten unødig</span></div>
+      <div><span class="stat-num">10 min</span><span class="stat-label">mellom hver oppdatering</span></div>
+      <div><span class="stat-num">∞</span><span class="stat-label">filer, drives og brukere</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-light">
+  <div class="max-width">
+    <p class="eyebrow">Hvordan det fungerer</p>
+    <h2 class="heading-xl">Fra fil til kunnskap, automatisk</h2>
+    <p class="lede-sm">
+      Hvert dokument går gjennom en pipeline som leser ut tekst og struktur, deler det opp i
+      meningsfulle biter og lager matematiske representasjoner som lar AI søke på betydning.
+    </p>
+
+    <ol class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <h3>Overvåking</h3>
+        <p>
+          Vi spør Microsoft Graph hvert <em>n</em>-te minutt om hva som har endret seg i alle
+          OneDrive- og SharePoint-områder. Bare nye eller oppdaterte filer trekkes ned — ingen
+          full re-indeksering hver runde.
+        </p>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <h3>Parsing med Unstructured</h3>
+        <p>
+          Filer leses med <strong>Unstructured</strong> — PDF-er får layout-deteksjon og OCR
+          (norsk + engelsk), Office-dokumenter parses direkte. Resultatet er ren tekst og
+          metadata, oppdelt i naturlige seksjoner.
+        </p>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <h3>Embedding</h3>
+        <p>
+          Hver tekstbit sendes til <strong>OpenAI text-embedding-3-large</strong> som returnerer
+          en 3072-dimensjonal vektor. Disse vektorene fanger betydning, ikke bare ord.
+        </p>
+      </li>
+      <li class="step">
+        <span class="step-num">4</span>
+        <h3>Lagring i Pinecone</h3>
+        <p>
+          Vektorene skrives til <strong>Pinecone</strong> sammen med metadata (filnavn, sti,
+          eier, sist endret). Når en fil oppdateres, slettes de gamle vektorene før de nye
+          legges inn — så indeksen er alltid synkron med OneDrive.
+        </p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="section section-grey">
+  <div class="max-width">
+    <p class="eyebrow">Funksjoner</p>
+    <h2 class="heading-xl">Bygget for tenant-skala drift</h2>
+
+    <div class="feature-grid">
+      <article class="feature-card">
+        <div class="feature-icon icon-mint">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 1 0 9-9"/><path d="M12 3v9l6 4"/>
+          </svg>
+        </div>
+        <h3>Inkrementell delta-sync</h3>
+        <p>
+          Bruker Microsoft Graphs <code>delta</code>-API per drive. Etter første kjøring
+          henter vi bare endringer — ekstremt billig og raskt.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feature-icon icon-cream">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/>
+          </svg>
+        </div>
+        <h3>Alle filtyper</h3>
+        <p>PDF, Word, PowerPoint, Excel, bilder, e-post, HTML, Markdown og mer — over 25 formater.</p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feature-icon icon-rose">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M3 9h18"/><path d="M9 21V9"/>
+          </svg>
+        </div>
+        <h3>Per-drive isolasjon</h3>
+        <p>
+          Hver brukers OneDrive får sitt eget Pinecone-namespace, så søk kan filtreres til
+          spesifikke personer eller team.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feature-icon icon-mint">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/>
+            <path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/>
+            <path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/>
+          </svg>
+        </div>
+        <h3>Selvtilhelende</h3>
+        <p>
+          Eksponensielle retries på Graph- og Pinecone-feil, automatisk re-sync når Graph
+          inkrementelle tokens utløper.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feature-icon icon-cream">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <h3>Norsk OCR</h3>
+        <p>Tesseract konfigurert med norsk og engelsk språkpakke — skannede PDF-er får tekst.</p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feature-icon icon-rose">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s-8-4.5-8-12V5l8-3 8 3v5c0 7.5-8 12-8 12z"/>
+          </svg>
+        </div>
+        <h3>App-only auth</h3>
+        <p>
+          Microsoft Entra ID client credentials. Ingen brukerkontekst, ingen samtykke å fornye —
+          tjenesten kjører selvstendig.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section section-dark">
+  <div class="max-width text-center">
+    <h2 class="heading-xl">Klart til å koble på dine systemer</h2>
+    <p class="lede-sm">
+      {{ brand_name }} er konfigurert for {{ brand_owner }}. Kjør gjennom oppsettet steg-for-steg
+      eller hopp rett i innstillingene.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary btn-lg" href="/help">Vis oppsetts&shy;veileder</a>
+      <a class="btn btn-ghost btn-lg btn-on-dark" href="/admin">Åpne innstillinger</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

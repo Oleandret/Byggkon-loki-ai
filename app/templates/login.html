@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Logg inn — {{ brand_name }}{% endblock %}
+
+{% block content %}
+<section class="section section-light">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <svg viewBox="0 0 56 56" width="56" height="56">
+        <rect x="6" y="6" width="44" height="44" rx="12" fill="#030213"/>
+        <path d="M18 18h6v20h-6V18zm10 10l10-10v20l-10-10z" fill="#1e8b6f"/>
+      </svg>
+    </div>
+    <h1 class="heading-lg">Logg inn på {{ brand_name }}</h1>
+    <p class="muted">Tilgang krever admin-passord satt av {{ brand_owner }}.</p>
+
+    {% if error %}
+      <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/login" class="form" autocomplete="off">
+      <label class="field">
+        <span class="field-label">Passord</span>
+        <input type="password" name="password" required autofocus class="input" />
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Logg inn →</button>
+    </form>
+
+    <p class="auth-hint muted">
+      Glemt passord? Den som driver tjenesten kan nullstille via miljøvariabelen
+      <code>ADMIN_PASSWORD</code> i Railway.
+    </p>
+  </div>
+</section>
+{% endblock %}
