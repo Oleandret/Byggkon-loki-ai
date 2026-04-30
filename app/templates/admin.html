@@ -303,13 +303,27 @@
       <header class="pane-head">
         <p class="eyebrow">Audit log</p>
         <h1 class="heading-xl">Kjøringer</h1>
-        <p class="muted">De siste 20 synkroniserings&shy;kjøringene.</p>
+        <p class="muted">
+          De siste 20 synkroniserings&shy;kjøringene. Klikk en rad for å
+          se hver hendelse i kjøringen — discovery, drives, filer, feil.
+          Den aktive kjøringen oppdaterer seg selv hvert 3. sekund.
+        </p>
       </header>
+
+      <div class="runs-controls">
+        <button id="runs-refresh-btn" class="btn btn-secondary">Oppdater</button>
+        <label class="toggle-advanced">
+          <input type="checkbox" id="runs-only-active" />
+          <span>Vis bare aktiv kjøring</span>
+        </label>
+      </div>
 
       <div class="table-wrap">
         <table class="data-table" id="runs-table">
           <thead>
             <tr>
+              <th></th>
+              <th>Status</th>
               <th>Start</th>
               <th>Varighet</th>
               <th>Drives</th>
@@ -317,10 +331,9 @@
               <th>Slettet</th>
               <th>Hoppet over</th>
               <th>Feil</th>
-              <th>Notat</th>
             </tr>
           </thead>
-          <tbody><tr><td colspan="8" class="muted">Laster…</td></tr></tbody>
+          <tbody><tr><td colspan="9" class="muted">Laster…</td></tr></tbody>
         </table>
       </div>
     </section>

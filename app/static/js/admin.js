@@ -87,39 +87,156 @@
     }
   }
 
-  // ─── Runs ─────────────────────────────────────────────────────────
+  // ─── Runs (with expandable per-run event log) ─────────────────────
+  let _runsState = {
+    expanded: new Set(),     // run_ids that are expanded
+    eventsCache: new Map(),  // run_id → events[]
+    activeRunId: null,
+    autoRefreshTimer: null,
+  };
+
   async function loadRuns() {
     const tbody = $("#runs-table tbody");
-    tbody.innerHTML = `<tr><td colspan="8" class="muted">Laster…</td></tr>`;
+    const onlyActive = document.getElementById("runs-only-active")?.checked;
+    if (!tbody.children.length || tbody.querySelector("td.muted")) {
+      tbody.innerHTML = `<tr><td colspan="9" class="muted">Laster…</td></tr>`;
+    }
     try {
       const { runs } = await api("GET", "/api/runs?limit=20");
       if (!runs.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="muted">Ingen kjøringer ennå.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="muted">Ingen kjøringer ennå. Trykk "Kjør synkronisering nå" i sidemenyen.</td></tr>`;
         return;
       }
-      tbody.innerHTML = runs
-        .map(
-          (r) => `
-            <tr>
-              <td>${fmtTime(r.started_at)}</td>
-              <td>${fmtDuration(r.started_at, r.finished_at)}</td>
-              <td>${r.drives_scanned ?? 0}</td>
-              <td>${r.files_indexed ?? 0}</td>
-              <td>${r.files_deleted ?? 0}</td>
-              <td>${r.files_skipped ?? 0}</td>
-              <td class="${r.errors > 0 ? "err" : "ok"}">${r.errors ?? 0}</td>
-              <td title="${escapeHtml(r.notes || "")}">${
-            r.notes ? truncate(r.notes, 60) : "—"
-          }</td>
-            </tr>`
-        )
+
+      const visible = onlyActive
+        ? runs.filter((r) => !r.finished_at)
+        : runs;
+
+      // Track active run for auto-refresh
+      _runsState.activeRunId =
+        runs.find((r) => !r.finished_at)?.id ?? null;
+
+      tbody.innerHTML = visible
+        .map((r) => renderRunRow(r))
         .join("");
+
+      // Wire up expand/collapse
+      tbody.querySelectorAll(".run-row[data-run-id]").forEach((row) => {
+        row.addEventListener("click", () => toggleRunRow(row));
+      });
+
+      // Reload events for already-expanded runs
+      for (const rid of _runsState.expanded) {
+        if (visible.find((r) => r.id === rid)) {
+          await loadRunEvents(rid);
+        }
+      }
+
+      // Auto-refresh while a run is active
+      maybeStartRunsAutoRefresh();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="8" class="err">Feil: ${escapeHtml(
-        e.message
-      )}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="err">Feil: ${escapeHtml(e.message)}</td></tr>`;
     }
   }
+
+  function renderRunRow(r) {
+    const expanded = _runsState.expanded.has(r.id);
+    const isActive = !r.finished_at;
+    const statusBadge = isActive
+      ? `<span class="phase-tag" style="background: var(--green-dim); color: var(--green);">PÅGÅR</span>`
+      : r.errors > 0
+      ? `<span class="phase-tag" style="background: var(--rose-dim); color: #b03030;">FEIL</span>`
+      : `<span class="phase-tag" style="background: var(--obsidian-soft); color: var(--obsidian);">FERDIG</span>`;
+    const arrow = expanded ? "▾" : "▸";
+
+    const events = _runsState.eventsCache.get(r.id) || [];
+    const eventsRow = expanded
+      ? `<tr class="run-events-row">
+           <td colspan="9">
+             <div class="run-events-shell">
+               ${renderEvents(events, isActive)}
+             </div>
+           </td>
+         </tr>`
+      : "";
+
+    return `
+      <tr class="run-row" data-run-id="${r.id}" data-active="${isActive}">
+        <td class="run-toggle">${arrow}</td>
+        <td>${statusBadge}</td>
+        <td>${fmtTime(r.started_at)}</td>
+        <td>${fmtDuration(r.started_at, r.finished_at)}</td>
+        <td>${r.drives_scanned ?? 0}</td>
+        <td>${r.files_indexed ?? 0}</td>
+        <td>${r.files_deleted ?? 0}</td>
+        <td>${r.files_skipped ?? 0}</td>
+        <td class="${r.errors > 0 ? "err" : "ok"}">${r.errors ?? 0}</td>
+      </tr>
+      ${eventsRow}`;
+  }
+
+  function renderEvents(events, isActive) {
+    if (!events.length) {
+      return isActive
+        ? `<p class="muted">Henter hendelser…</p>`
+        : `<p class="muted">Ingen detaljerte hendelser registrert for denne kjøringen.</p>`;
+    }
+    // Events come sorted DESC; reverse for chronological reading.
+    const ordered = [...events].reverse();
+    return `<ul class="event-list">
+      ${ordered
+        .map((e) => {
+          const cls = `event-${e.level}`;
+          const time = new Date(e.ts * 1000).toLocaleTimeString("nb-NO");
+          const ctx = [e.drive_label, e.file_name].filter(Boolean).join(" · ");
+          return `
+            <li class="event-item ${cls}">
+              <span class="event-time">${time}</span>
+              <span class="event-name">${escapeHtml(e.event)}</span>
+              ${ctx ? `<span class="event-ctx">${escapeHtml(ctx)}</span>` : ""}
+              <span class="event-msg">${escapeHtml(e.message || "")}</span>
+            </li>`;
+        })
+        .join("")}
+    </ul>`;
+  }
+
+  async function toggleRunRow(rowEl) {
+    const runId = parseInt(rowEl.dataset.runId, 10);
+    if (_runsState.expanded.has(runId)) {
+      _runsState.expanded.delete(runId);
+    } else {
+      _runsState.expanded.add(runId);
+      await loadRunEvents(runId);
+    }
+    await loadRuns();
+  }
+
+  async function loadRunEvents(runId) {
+    try {
+      const r = await api("GET", `/api/events?run_id=${runId}&limit=400`);
+      _runsState.eventsCache.set(runId, r.events || []);
+    } catch (e) {
+      console.warn("events load failed:", e);
+    }
+  }
+
+  function maybeStartRunsAutoRefresh() {
+    const isOnRunsTab = document
+      .querySelector('[data-tab-pane="runs"]')
+      ?.classList.contains("is-active");
+    const hasActive = _runsState.activeRunId != null;
+
+    if (isOnRunsTab && hasActive && !_runsState.autoRefreshTimer) {
+      _runsState.autoRefreshTimer = setInterval(() => loadRuns(), 3000);
+    } else if ((!isOnRunsTab || !hasActive) && _runsState.autoRefreshTimer) {
+      clearInterval(_runsState.autoRefreshTimer);
+      _runsState.autoRefreshTimer = null;
+    }
+  }
+
+  document.getElementById("runs-refresh-btn")?.addEventListener("click", loadRuns);
+  document.getElementById("runs-only-active")?.addEventListener("change", loadRuns);
 
   function truncate(s, n) {
     if (!s) return "";

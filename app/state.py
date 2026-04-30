@@ -69,6 +69,21 @@ CREATE TABLE IF NOT EXISTS sync_progress (
     started_at      REAL,
     updated_at      REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS sync_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id          INTEGER,
+    ts              REAL NOT NULL,
+    level           TEXT NOT NULL,                 -- 'info' | 'warn' | 'error'
+    event           TEXT NOT NULL,                 -- short slug: drive.start, file.indexed, ...
+    drive_id        TEXT,
+    drive_label     TEXT,
+    file_name       TEXT,
+    message         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_sync_events_run ON sync_events(run_id, id);
+CREATE INDEX IF NOT EXISTS ix_sync_events_ts  ON sync_events(ts);
 """
 
 
@@ -320,6 +335,60 @@ class StateStore:
                 "SELECT * FROM sync_progress ORDER BY started_at NULLS LAST, drive_label"
             ).fetchall()
             return [dict(r) for r in rows]
+
+    # ─── events ──────────────────────────────────────────────────────
+    def record_event(
+        self,
+        *,
+        run_id: int | None,
+        level: str,
+        event: str,
+        drive_id: str | None = None,
+        drive_label: str | None = None,
+        file_name: str | None = None,
+        message: str | None = None,
+    ) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO sync_events
+                  (run_id, ts, level, event, drive_id, drive_label, file_name, message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (run_id, time.time(), level, event, drive_id, drive_label, file_name, message),
+            )
+
+    def latest_events(
+        self,
+        *,
+        run_id: int | None = None,
+        limit: int = 200,
+        since_id: int | None = None,
+    ) -> list[dict]:
+        sql = "SELECT * FROM sync_events"
+        params: list = []
+        clauses = []
+        if run_id is not None:
+            clauses.append("run_id = ?"); params.append(run_id)
+        if since_id is not None:
+            clauses.append("id > ?"); params.append(since_id)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def prune_events(self, keep_last: int = 5000) -> int:
+        """Delete events past the most recent `keep_last` rows."""
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM sync_events WHERE id NOT IN "
+                "(SELECT id FROM sync_events ORDER BY id DESC LIMIT ?)",
+                (keep_last,),
+            )
+            return cur.rowcount or 0
 
     def stats(self) -> dict:
         with self._connect() as conn:

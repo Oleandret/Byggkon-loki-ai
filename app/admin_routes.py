@@ -222,6 +222,19 @@ async def api_runs(limit: int = 20) -> dict:
     return {"runs": _app_state.state.latest_runs(limit=limit)}
 
 
+@api.get("/events")
+async def api_events(
+    run_id: int | None = None,
+    limit: int = 200,
+    since_id: int | None = None,
+) -> dict:
+    """Recent sync events. Filter by run_id, paginate with since_id."""
+    events = _app_state.state.latest_events(
+        run_id=run_id, limit=min(limit, 500), since_id=since_id
+    )
+    return {"events": events, "run_id": run_id}
+
+
 @api.get("/mcp/info")
 async def api_mcp_info(request: Request) -> dict:
     """Connection details for the MCP tab — masked token, URL, status."""

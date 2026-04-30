@@ -67,12 +67,26 @@ class SyncOrchestrator:
     async def _run_inner(self) -> RunStats:
         stats = RunStats()
         run_id = self._state.start_run()
+        self._run_id = run_id  # used by helpers for event-attribution
         self._state.reset_progress()
         log.info("sync.start", run_id=run_id, scope=self._settings.sync_scope.value)
+        self._state.record_event(
+            run_id=run_id, level="info", event="run.start",
+            message=f"Starter synkronisering · scope={self._settings.sync_scope.value} · "
+                    f"providers={','.join(self._settings.providers())}",
+        )
 
         try:
+            self._state.record_event(
+                run_id=run_id, level="info", event="discovery.start",
+                message="Henter drives fra Microsoft Graph…",
+            )
             drives = await discover_drives(self._graph, self._settings)
             log.info("sync.drives.discovered", count=len(drives))
+            self._state.record_event(
+                run_id=run_id, level="info", event="discovery.done",
+                message=f"Fant {len(drives)} drives å synkronisere",
+            )
             for drv in drives:
                 self._state.upsert_drive_progress(
                     drv.drive_id,
@@ -90,6 +104,11 @@ class SyncOrchestrator:
                     if len(stats.error_samples) < 10:
                         stats.error_samples.append(msg)
                     log.error("sync.drive.error", drive=drive.owner_label, err=str(e))
+                    self._state.record_event(
+                        run_id=run_id, level="error", event="drive.error",
+                        drive_id=drive.drive_id, drive_label=drive.owner_label,
+                        message=str(e),
+                    )
 
         finally:
             self._state.finish_run(
@@ -110,6 +129,21 @@ class SyncOrchestrator:
                 skipped=stats.files_skipped,
                 errors=stats.errors,
             )
+            self._state.record_event(
+                run_id=run_id, level="info", event="run.done",
+                message=(
+                    f"Ferdig · {stats.drives_scanned} drives · "
+                    f"{stats.files_indexed} indeksert · "
+                    f"{stats.files_deleted} slettet · "
+                    f"{stats.files_skipped} hoppet over · "
+                    f"{stats.errors} feil"
+                ),
+            )
+            # Keep events table from growing unbounded.
+            try:
+                self._state.prune_events(keep_last=10000)
+            except Exception:  # noqa: BLE001
+                pass
         return stats
 
     async def _sync_drive(self, drive: DriveRef, stats: RunStats) -> None:
@@ -119,6 +153,11 @@ class SyncOrchestrator:
             drive=drive.owner_label,
             drive_id=drive.drive_id,
             resuming=bool(delta_link),
+        )
+        self._state.record_event(
+            run_id=getattr(self, "_run_id", None), level="info", event="drive.start",
+            drive_id=drive.drive_id, drive_label=drive.owner_label,
+            message=f"Starter drive · {'fortsetter fra delta-checkpoint' if delta_link else 'full initial sync'}",
         )
 
         # Estimate file count for progress tracking (best-effort).
@@ -197,11 +236,21 @@ class SyncOrchestrator:
             log.info(
                 "sync.drive.checkpointed", drive=drive.owner_label
             )
+            self._state.record_event(
+                run_id=getattr(self, "_run_id", None), level="info", event="drive.done",
+                drive_id=drive.drive_id, drive_label=drive.owner_label,
+                message="Drive ferdig · delta-checkpoint lagret",
+            )
         else:
             log.warning(
                 "sync.drive.no_delta_link",
                 drive=drive.owner_label,
                 hint="Graph returned no @odata.deltaLink; will retry next run.",
+            )
+            self._state.record_event(
+                run_id=getattr(self, "_run_id", None), level="warn", event="drive.no_delta",
+                drive_id=drive.drive_id, drive_label=drive.owner_label,
+                message="Graph returnerte ingen @odata.deltaLink — prøver igjen neste runde",
             )
         self._state.upsert_drive_progress(drive.drive_id, phase="done")
 
@@ -281,8 +330,24 @@ class SyncOrchestrator:
             if res.indexed:
                 stats.files_indexed += 1
                 self._state.increment_drive_progress(drive.drive_id, processed_delta=1)
+                self._state.record_event(
+                    run_id=getattr(self, "_run_id", None), level="info", event="file.indexed",
+                    drive_id=drive.drive_id, drive_label=drive.owner_label,
+                    file_name=item.get("name"),
+                    message=f"{res.chunk_count} tekst-chunks · {res.image_count} bilder",
+                )
             elif res.skipped_reason:
                 stats.files_skipped += 1
+                # Only log non-trivial skips so we don't drown the log in
+                # "unchanged" entries on every delta run.
+                if res.skipped_reason not in ("unchanged", "content_unchanged"):
+                    self._state.record_event(
+                        run_id=getattr(self, "_run_id", None), level="info",
+                        event="file.skipped",
+                        drive_id=drive.drive_id, drive_label=drive.owner_label,
+                        file_name=item.get("name"),
+                        message=f"Hoppet over: {res.skipped_reason}",
+                    )
         except Exception as e:  # noqa: BLE001
             stats.errors += 1
             if len(stats.error_samples) < 10:
@@ -292,4 +357,10 @@ class SyncOrchestrator:
                 file=item.get("name"),
                 file_id=item.get("id"),
                 err=str(e),
+            )
+            self._state.record_event(
+                run_id=getattr(self, "_run_id", None), level="error", event="file.error",
+                drive_id=drive.drive_id, drive_label=drive.owner_label,
+                file_name=item.get("name"),
+                message=str(e)[:500],
             )

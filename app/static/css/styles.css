@@ -508,6 +508,45 @@ code { background: var(--obsidian-soft); padding: 1px 6px; border-radius: 4px; }
 .data-table .ok { color: var(--green); font-weight: 600; }
 .data-table .err { color: #b03030; font-weight: 600; }
 
+/* ─── Runs tab — expandable rows + event log ─────────────────────── */
+.runs-controls {
+  display: flex; gap: 16px; align-items: center; margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.run-row { cursor: pointer; transition: background 0.15s; }
+.run-row:hover { background: var(--ghost); }
+.run-toggle { width: 24px; color: var(--grey-500); font-family: var(--font-mono); }
+.run-events-row td { background: var(--ghost) !important; padding: 0 !important; }
+.run-events-shell {
+  padding: 14px 22px; border-top: 1px solid var(--grey-100);
+}
+.event-list {
+  list-style: none; padding: 0; margin: 0;
+  font-family: var(--font-mono); font-size: 12px;
+  max-height: 420px; overflow-y: auto;
+}
+.event-item {
+  display: grid; gap: 10px; padding: 6px 8px;
+  grid-template-columns: 80px 130px 1fr 1.5fr;
+  border-radius: 4px;
+}
+.event-item:hover { background: var(--white); }
+.event-time { color: var(--grey-500); }
+.event-name { color: var(--obsidian); font-weight: 600; }
+.event-ctx  { color: var(--grey-700); }
+.event-msg  { color: var(--grey-700); }
+.event-info  { border-left: 3px solid transparent; }
+.event-warn  { border-left: 3px solid #d99a2c; padding-left: 5px; }
+.event-error {
+  border-left: 3px solid #b03030; padding-left: 5px;
+  background: rgba(176, 48, 48, 0.04);
+}
+.event-error .event-msg { color: #b03030; }
+@media (max-width: 720px) {
+  .event-item { grid-template-columns: 1fr; gap: 2px; padding: 8px; }
+  .event-time { font-size: 10px; }
+}
+
 /* ─── Test cards ─────────────────────────────────────────────────── */
 .test-grid {
   display: grid; gap: 18px;
