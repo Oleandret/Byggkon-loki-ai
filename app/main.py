@@ -46,6 +46,7 @@ class AppState:
     pinecone: PineconeStore
     orchestrator: SyncOrchestrator
     scheduler: AsyncIOScheduler
+    init_errors: dict[str, str]  # name -> last init error string
 
     def scheduler_reschedule(self) -> None:
         """Replace the sync job with a fresh trigger derived from current settings."""
@@ -104,11 +105,17 @@ async def lifespan(app: FastAPI):
     # come up so the user can configure.
     _state.state = StateStore(_state.settings.state_dir)
 
+    # Track per-client init errors so the admin UI / test endpoints can
+    # surface the *real* reason a client is missing.
+    _state.init_errors = {}
+
     def _safe(name, fn):
         try:
             return fn()
         except Exception as e:  # noqa: BLE001
-            log.warning("client.init.skip", client=name, err=str(e))
+            err = f"{type(e).__name__}: {e}"
+            log.warning("client.init.skip", client=name, err=err)
+            _state.init_errors[name] = err
             return None
 
     _state.graph = _safe("graph", lambda: GraphClient(_state.settings))

@@ -50,11 +50,38 @@ class GraphClient:
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._msal_app = msal.ConfidentialClientApplication(
-            client_id=settings.graph_client_id,
-            client_credential=settings.graph_client_secret,
-            authority=settings.graph_authority_url,
-        )
+
+        # Pre-flight: validate that all three creds are present BEFORE we
+        # let MSAL parse the authority URL — MSAL's error messages are vague
+        # ("invalid authority url") and don't tell you which field is empty.
+        missing = []
+        if not settings.graph_tenant_id.strip():
+            missing.append("GRAPH_TENANT_ID")
+        if not settings.graph_client_id.strip():
+            missing.append("GRAPH_CLIENT_ID")
+        if not settings.graph_client_secret.strip():
+            missing.append("GRAPH_CLIENT_SECRET")
+        if missing:
+            raise ValueError(
+                f"Microsoft Graph credentials missing: {', '.join(missing)}. "
+                "Set these env vars in Railway and redeploy, or fill them "
+                "in via /admin → Innstillinger."
+            )
+
+        try:
+            self._msal_app = msal.ConfidentialClientApplication(
+                client_id=settings.graph_client_id.strip(),
+                client_credential=settings.graph_client_secret.strip(),
+                authority=settings.graph_authority_url.strip(),
+            )
+        except ValueError as e:
+            raise ValueError(
+                f"MSAL rejected the Graph configuration: {e}. "
+                f"Authority URL was: {settings.graph_authority_url!r}. "
+                "Sjekk at GRAPH_TENANT_ID er en gyldig GUID (eller 'common'/'organizations'), "
+                "og at GRAPH_AUTHORITY ikke har trailing slash."
+            ) from e
+
         # MSAL caches tokens internally per scope; we cache the dict it returns
         # so we don't acquire on every request.
         self._token: Optional[str] = None

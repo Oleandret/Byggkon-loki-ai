@@ -333,20 +333,106 @@ async def api_trigger_sync() -> dict:
 # ─── Test connections ────────────────────────────────────────────────
 @api.post("/test/graph")
 async def api_test_graph() -> dict:
+    """Test the Graph connection with full diagnostics so we can pinpoint
+    exactly where in the chain things fail."""
+    s = _app_state.settings
+    init_err = (getattr(_app_state, "init_errors", {}) or {}).get("graph")
+
+    # Step 1: are the three creds set in *some* form?
+    cred_status = {
+        "GRAPH_TENANT_ID": _state_of(s.graph_tenant_id),
+        "GRAPH_CLIENT_ID": _state_of(s.graph_client_id),
+        "GRAPH_CLIENT_SECRET": _state_of(s.graph_client_secret),
+    }
+    missing = [k for k, v in cred_status.items() if v["status"] == "missing"]
+
+    # Step 2: did the GraphClient construct successfully at boot?
     if _app_state.graph is None:
-        return {"ok": False, "error": "Graph not configured (missing tenant/client/secret)"}
+        return {
+            "ok": False,
+            "stage": "client_init",
+            "error": init_err or "GraphClient is None (no init error captured)",
+            "credentials": cred_status,
+            "missing": missing,
+            "hint": (
+                "Fyll inn alle tre credentials i Railway og redeploy, "
+                "eller via /admin → Innstillinger."
+                if missing
+                else "Sjekk at GRAPH_TENANT_ID er en gyldig GUID. "
+                     f"Authority URL: {s.graph_authority_url!r}"
+            ),
+        }
+
+    # Step 3: try to acquire a token (this is where most cred errors surface)
     try:
-        # /me would be a delegated call; for app-only we hit /organization
-        # which works with even minimal scopes.
+        token = await _app_state.graph._get_token()  # noqa: SLF001
+    except Exception as e:  # noqa: BLE001
+        return {
+            "ok": False,
+            "stage": "token_acquire",
+            "error": str(e),
+            "credentials": cred_status,
+            "hint": (
+                "Token-acquire feilet. Vanligste grunner: feil client_secret, "
+                "secret er utløpt, eller tenant_id peker til feil tenant. "
+                "Sjekk i Entra ID → App registrations → Certificates & secrets."
+            ),
+        }
+
+    # Step 4: hit /organization to verify permissions and admin consent.
+    try:
         data = await _app_state.graph.get_json("/organization")
-        org = (data.get("value") or [{}])[0]
+        orgs = data.get("value") or []
+        if not orgs:
+            return {
+                "ok": False,
+                "stage": "organization_read",
+                "error": "Got 200 but no organization in response",
+                "raw": data,
+            }
+        org = orgs[0]
         return {
             "ok": True,
+            "stage": "ok",
             "tenant_display_name": org.get("displayName"),
             "tenant_id": org.get("id"),
+            "verified_domains": [
+                d.get("name") for d in org.get("verifiedDomains") or []
+            ][:5],
+            "token_acquired": bool(token),
         }
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "error": str(e)}
+        msg = str(e)
+        hint = "Ukjent feil — se logg."
+        if "403" in msg or "Forbidden" in msg.lower():
+            hint = (
+                "403 Forbidden — admin consent mangler eller feil "
+                "permissions. Gå til Entra ID → API permissions → "
+                "klikk 'Grant admin consent for {tenant}'. Påkrevd: "
+                "Files.Read.All, User.Read.All. Sites.Read.All hvis SharePoint."
+            )
+        elif "401" in msg or "Unauthorized" in msg.lower():
+            hint = (
+                "401 Unauthorized — client_secret er sannsynligvis "
+                "utløpt eller feil. Lag et nytt secret i Entra ID."
+            )
+        return {
+            "ok": False,
+            "stage": "api_call",
+            "error": msg,
+            "hint": hint,
+        }
+
+
+def _state_of(value: str) -> dict:
+    v = (value or "").strip()
+    if not v:
+        return {"status": "missing", "length": 0, "preview": ""}
+    if len(v) <= 8:
+        preview = "•" * len(v)
+    else:
+        preview = f"{v[:4]}…{v[-4:]}"
+    return {"status": "set", "length": len(v), "preview": preview}
 
 
 @api.post("/test/openai")
