@@ -2,6 +2,26 @@
 {% block title %}Innstillinger — {{ brand_name }}{% endblock %}
 
 {% block content %}
+
+<!-- ─── Status banner (sticky over admin shell) ─────────────────── -->
+<div id="status-banner" class="status-banner" style="display: none;">
+  <div class="status-banner-inner">
+    <div class="status-banner-left">
+      <div id="status-sync" class="status-pill">
+        <span class="status-dot"></span>
+        <span id="status-sync-label">Sjekker…</span>
+      </div>
+      <div id="status-vectors" class="status-pill muted">
+        <span>—</span> vektorer indeksert
+      </div>
+      <div id="status-cost" class="status-pill muted">
+        <span>—</span>
+      </div>
+    </div>
+    <div id="status-alerts" class="status-banner-right"></div>
+  </div>
+</div>
+
 <section class="admin-shell">
   <aside class="admin-sidebar">
     <div class="admin-sidebar-inner">
@@ -305,8 +325,18 @@
             <td><code>streamable-http</code></td>
           </tr>
           <tr>
-            <th>Auth</th>
-            <td><code>Authorization: Bearer &lt;MCP_BEARER_TOKEN&gt;</code></td>
+            <th>Bearer-token</th>
+            <td>
+              <code id="mcp-token-preview" class="token-preview">—</code>
+              <button id="mcp-generate-token-btn" class="btn btn-secondary" style="margin-left: 8px;">
+                Generer nytt token
+              </button>
+              <div id="mcp-fresh-token" class="fresh-token" style="display: none;"></div>
+            </td>
+          </tr>
+          <tr>
+            <th>Auth header</th>
+            <td><code>Authorization: Bearer &lt;token&gt;</code></td>
           </tr>
           <tr>
             <th>Status</th>

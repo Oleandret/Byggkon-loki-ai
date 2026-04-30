@@ -1002,6 +1002,13 @@
       const r = await api("GET", "/api/mcp/info");
       document.getElementById("mcp-url").textContent = r.url || "MCP er deaktivert";
 
+      const tokPreview = document.getElementById("mcp-token-preview");
+      if (tokPreview) {
+        tokPreview.textContent = r.bearer_token_set
+          ? r.bearer_token_masked || "(satt)"
+          : "(ikke satt)";
+      }
+
       const status = document.getElementById("mcp-status");
       if (!r.enabled) {
         status.textContent = "Deaktivert";
@@ -1094,6 +1101,53 @@
       console.warn("mcp info failed:", e);
     }
   }
+
+  document
+    .getElementById("mcp-generate-token-btn")
+    ?.addEventListener("click", async () => {
+      if (!confirm(
+        "Generer et nytt MCP-bearer-token?\n\n" +
+        "Det gamle tokenet sluttes å fungere etter neste container-restart. " +
+        "Alle MCP-klienter (Claude Desktop, Cursor, m.fl.) må oppdateres med " +
+        "det nye tokenet."
+      )) return;
+
+      const btn = document.getElementById("mcp-generate-token-btn");
+      const display = document.getElementById("mcp-fresh-token");
+      btn.disabled = true;
+      btn.textContent = "Genererer…";
+      display.style.display = "none";
+      try {
+        const r = await api("POST", "/api/mcp/generate-token");
+        display.innerHTML = `
+          <div class="fresh-token-warning">
+            ⚠ ${escapeHtml(r.warning)}
+          </div>
+          <div class="fresh-token-row">
+            <code id="fresh-token-value">${escapeHtml(r.token)}</code>
+            <button class="btn btn-primary btn-copy" data-copy="fresh-token-value">Kopier</button>
+          </div>
+          <p class="muted small">
+            ${r.restart_required ? "Container må restartes — bruk knappen i sidemenyen." : "Aktivt umiddelbart."}
+            Etter ${60} sekunder forsvinner denne visningen automatisk.
+          </p>`;
+        display.style.display = "block";
+        // Auto-hide after 60s for OPSEC
+        setTimeout(() => {
+          const el = document.getElementById("fresh-token-value");
+          if (el) el.textContent = "(skjult — kopier på nytt eller generer nytt)";
+        }, 60000);
+
+        // Refresh the masked preview at the top
+        await loadMcpTab();
+      } catch (e) {
+        display.style.display = "block";
+        display.innerHTML = `<div class="alert alert-error">Feil: ${escapeHtml(e.message)}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Generer nytt token";
+      }
+    });
 
   document.addEventListener("click", (e) => {
     const target = e.target.closest("[data-copy]");
@@ -1232,7 +1286,62 @@
     renderChatMessages("gemini");
   });
 
+  // ─── Status banner (always visible at top) ───────────────────────
+  async function loadBanner() {
+    try {
+      const b = await api("GET", "/api/banner");
+      const el = document.getElementById("status-banner");
+      if (!el) return;
+      el.style.display = "block";
+
+      // Sync status pill
+      const syncPill = document.getElementById("status-sync");
+      const syncLabel = document.getElementById("status-sync-label");
+      const dot = syncPill.querySelector(".status-dot");
+      if (b.sync_state === "running") {
+        syncPill.className = "status-pill status-running";
+        syncLabel.textContent = "Synkronisering pågår";
+      } else if (b.sync_state === "stopping") {
+        syncPill.className = "status-pill status-warn";
+        syncLabel.textContent = "Stopper…";
+      } else {
+        syncPill.className = "status-pill status-idle";
+        syncLabel.textContent = "Sync inaktiv";
+      }
+
+      // Vectors
+      document.getElementById("status-vectors").innerHTML =
+        `<strong>${(b.vectors_total || 0).toLocaleString("nb-NO")}</strong> vektorer indeksert`;
+
+      // Cost
+      const c = b.cost || {};
+      document.getElementById("status-cost").innerHTML =
+        `<strong>$${c.estimated_monthly_total_usd ?? "—"}</strong>/mnd estimert · ` +
+        `embedding-kostnad så langt: $${c.embedding_cost_to_date_usd ?? "—"}`;
+
+      // Alerts
+      const alertsEl = document.getElementById("status-alerts");
+      const alerts = b.alerts || [];
+      if (!alerts.length) {
+        alertsEl.innerHTML = "";
+      } else {
+        alertsEl.innerHTML = alerts
+          .slice(0, 3)
+          .map((a) => `
+            <div class="status-alert status-alert-${a.level}" title="${escapeHtml(a.detail || '')}">
+              <strong>${escapeHtml(a.title)}</strong>
+              ${a.detail ? `<span class="muted small"> — ${escapeHtml(a.detail.slice(0, 80))}</span>` : ""}
+            </div>`)
+          .join("");
+      }
+    } catch (e) {
+      // Silently ignore — banner is best-effort
+    }
+  }
+
   // ─── Init ─────────────────────────────────────────────────────────
   loadStats();
   setInterval(loadStats, 30000);
+  loadBanner();
+  setInterval(loadBanner, 15000);
 })();

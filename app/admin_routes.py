@@ -203,6 +203,129 @@ async def api_patch_settings(payload: dict) -> dict:
     }
 
 
+@api.get("/banner")
+async def api_banner() -> dict:
+    """Compact status payload for the always-visible top banner.
+
+    Returns a list of alerts (severity-ordered) and a rough cost estimate
+    based on what we've actually written to Pinecone.
+    """
+    s = _app_state.settings
+    init_errs = getattr(_app_state, "init_errors", {}) or {}
+    alerts: list[dict] = []
+
+    # ─── Init errors (blockers) ─────────────────────────────────────
+    for component, err in init_errs.items():
+        alerts.append({
+            "level": "error",
+            "key": f"init.{component}",
+            "title": f"{component.title()} feilet ved oppstart",
+            "detail": err,
+        })
+
+    # ─── Missing-config warnings ────────────────────────────────────
+    if _app_state.orchestrator is None:
+        missing = []
+        if not s.graph_tenant_id: missing.append("Microsoft Graph")
+        if not s.openai_api_key and not s.gemini_api_key:
+            missing.append("embedding provider")
+        if not s.pinecone_api_key: missing.append("Pinecone")
+        if missing:
+            alerts.append({
+                "level": "warn",
+                "key": "config.missing",
+                "title": "Synkronisering deaktivert",
+                "detail": f"Mangler konfigurasjon: {', '.join(missing)}",
+            })
+
+    # ─── Indexing health ────────────────────────────────────────────
+    try:
+        runs = _app_state.state.latest_runs(limit=5)
+    except Exception:  # noqa: BLE001
+        runs = []
+    last_completed = next((r for r in runs if r.get("finished_at")), None)
+    if last_completed and (last_completed.get("errors") or 0) > 0:
+        alerts.append({
+            "level": "warn",
+            "key": "run.errors",
+            "title": f"{last_completed['errors']} feil i siste kjøring",
+            "detail": (last_completed.get("notes") or "")[:200] or "Se Kjøringer for detaljer.",
+        })
+
+    # ─── Pinecone vector counts + cost estimate ─────────────────────
+    pinecone_stats: dict = {}
+    total_vectors = 0
+    try:
+        if _app_state.pinecone is not None:
+            pinecone_stats = await _app_state.pinecone.index_stats()
+            total_vectors = int(
+                pinecone_stats.get("total_vector_count")
+                or pinecone_stats.get("totalVectorCount")
+                or 0
+            )
+    except Exception as e:  # noqa: BLE001
+        alerts.append({
+            "level": "warn",
+            "key": "pinecone.stats",
+            "title": "Klarte ikke lese Pinecone-statistikk",
+            "detail": str(e)[:200],
+        })
+
+    # Cost estimate based on indexed vectors. Rough but useful.
+    # Assumptions:
+    #   - Vector dimensions ~3072 → ~12 KB per vector raw, ~24 KB w/ index overhead
+    #   - Pinecone serverless: ~$0.33 per GB-month
+    #   - Embeddings cost amortized: $0.13/M tokens for OpenAI -3-large,
+    #     each chunk ~400 tokens. Cost-to-date is roughly:
+    #     vectors * 400 tokens * $0.13 / 1M
+    GB_PER_VECTOR = 24 / (1024 ** 2)  # in GB
+    storage_gb = total_vectors * GB_PER_VECTOR
+    storage_per_month = storage_gb * 0.33  # USD
+
+    # Embedding cost per provider (split by indexes)
+    per_provider_costs: dict[str, float] = {}
+    indexes_dict = pinecone_stats if isinstance(pinecone_stats, dict) else {}
+    for prov in ("openai", "gemini"):
+        prov_stats = indexes_dict.get(prov) or {}
+        v_count = int(
+            prov_stats.get("total_vector_count")
+            or prov_stats.get("totalVectorCount")
+            or 0
+        )
+        # OpenAI: $0.13/M tokens, Gemini: $0.10/M tokens
+        rate = 0.13 if prov == "openai" else 0.10
+        per_provider_costs[prov] = round(v_count * 400 * rate / 1_000_000, 2)
+
+    cost = {
+        "vectors_total": total_vectors,
+        "storage_gb": round(storage_gb, 3),
+        "storage_per_month_usd": round(storage_per_month, 2),
+        "embedding_cost_to_date_usd": round(sum(per_provider_costs.values()), 2),
+        "per_provider": per_provider_costs,
+        "estimated_monthly_total_usd": round(
+            storage_per_month
+            # Assume ~5% monthly churn re-embedded
+            + sum(per_provider_costs.values()) * 0.05
+            # Plus rough Railway baseline
+            + 30,
+            2,
+        ),
+    }
+
+    # ─── Sync status ────────────────────────────────────────────────
+    orch = getattr(_app_state, "orchestrator", None)
+    sync_state = "idle"
+    if orch is not None and getattr(orch, "is_running", False):
+        sync_state = "stopping" if orch.stop_requested else "running"
+
+    return {
+        "alerts": alerts,
+        "cost": cost,
+        "sync_state": sync_state,
+        "vectors_total": total_vectors,
+    }
+
+
 @api.get("/stats")
 async def api_stats() -> dict:
     s = _app_state.state.stats()
@@ -235,6 +358,30 @@ async def api_events(
     return {"events": events, "run_id": run_id}
 
 
+@api.post("/mcp/generate-token")
+async def api_mcp_generate_token() -> dict:
+    """Generate a secure random bearer token, save it, return it once.
+
+    The plaintext token is returned ONLY in this response — afterwards it's
+    Fernet-encrypted in SQLite and surfaced as a masked preview elsewhere.
+    Save it to your password manager immediately.
+    """
+    import secrets as _secrets
+    token = _secrets.token_hex(32)  # 64 hex chars = 256 bits of entropy
+    restart_keys = _app_state.settings_store.set_overrides({"mcp_bearer_token": token})
+    _app_state.settings = _app_state.settings_store.effective_settings()
+    return {
+        "token": token,
+        "length": len(token),
+        "restart_required": "mcp_bearer_token" in restart_keys,
+        "warning": (
+            "Dette er eneste gang det fulle tokenet vises. Kopier det nå "
+            "og lagre i en passordhvelv. Containeren må restartes for at "
+            "MCP-serveren skal akseptere det nye tokenet."
+        ),
+    }
+
+
 @api.get("/mcp/info")
 async def api_mcp_info(request: Request) -> dict:
     """Connection details for the MCP tab — masked token, URL, status."""
@@ -257,6 +404,7 @@ async def api_mcp_info(request: Request) -> dict:
         "url": mcp_url,
         "bearer_token_masked": masked_token,
         "bearer_token_set": bool(s.mcp_bearer_token),
+        "bearer_token_length": len(s.mcp_bearer_token) if s.mcp_bearer_token else 0,
         "default_provider": s.mcp_default_provider,
         "default_top_k": s.mcp_default_top_k,
         "tools": [

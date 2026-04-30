@@ -127,8 +127,10 @@ class Settings(BaseSettings):
     mcp_default_provider: str = "openai"  # which Pinecone index to search
 
     # ─── In-app RAG chat ─────────────────────────────────────────────
-    openai_chat_model: str = "gpt-4o-mini"
-    gemini_chat_model: str = "gemini-2.5-flash"
+    # Defaults peker på rask + billig modell i hver familie. Brukere kan
+    # bytte til topp-modeller (GPT-5.5, Gemini 3.1 Pro) for bedre kvalitet.
+    openai_chat_model: str = "gpt-5.3-mini"
+    gemini_chat_model: str = "gemini-3-flash"
     chat_top_k: int = 8
     chat_max_context_chars: int = 12000  # cap retrieved context per turn
     chat_system_prompt: str = (

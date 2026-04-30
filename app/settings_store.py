@@ -182,12 +182,47 @@ FIELDS: tuple[FieldSpec, ...] = (
               "Vises ved siden av produktnavnet."),
 
     # ─── Chat (intern RAG) ───────────────────────────────────────────
+    # Modeller pr. April 2026. OpenAI har retired GPT-4o/4.1 i ChatGPT
+    # men API beholder dem fortsatt. Gemini 3-serien er ny flagship.
     FieldSpec("openai_chat_model", "OpenAI chat-modell", "Chat (intern RAG)", "enum",
-              "Modellen som svarer i OpenAI-panelet.",
-              options=("gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1")),
+              "Modellen som svarer i OpenAI-panelet. GPT-5-serien er nyeste flagship.",
+              options=(
+                  # GPT-5-serien (nyeste, anbefalt)
+                  "gpt-5.5",
+                  "gpt-5.4",
+                  "gpt-5.3",
+                  "gpt-5.3-mini",
+                  "gpt-5",
+                  "gpt-5-mini",
+                  "gpt-5-nano",
+                  # GPT-4.1-serien (fortsatt API-tilgjengelig)
+                  "gpt-4.1",
+                  "gpt-4.1-mini",
+                  "gpt-4.1-nano",
+                  # GPT-4o-serien (fortsatt API-tilgjengelig)
+                  "gpt-4o",
+                  "gpt-4o-mini",
+                  # Reasoning-modeller
+                  "o4-mini",
+                  "o3",
+                  "o3-mini",
+              )),
     FieldSpec("gemini_chat_model", "Gemini chat-modell", "Chat (intern RAG)", "enum",
-              "Modellen som svarer i Gemini-panelet.",
-              options=("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash")),
+              "Modellen som svarer i Gemini-panelet. Gemini 3-serien er nyeste.",
+              options=(
+                  # Gemini 3-serien (nyeste flagship, april 2026)
+                  "gemini-3.1-pro",
+                  "gemini-3-pro-preview",
+                  "gemini-3-flash-preview",
+                  "gemini-3.1-flash-lite",
+                  "gemini-3-flash",
+                  # Gemini 2.5-serien (fortsatt støttet)
+                  "gemini-2.5-pro",
+                  "gemini-2.5-flash",
+                  "gemini-2.5-flash-lite",
+                  # Gemini 2.0-serien (utfases 1. juni 2026 — anbefales ikke)
+                  "gemini-2.0-flash",
+              )),
     FieldSpec("chat_top_k", "Antall treff per spørsmål", "Chat (intern RAG)", "number",
               "Hvor mange Pinecone-vektorer hentes som kontekst. 8 er en god default."),
     FieldSpec("chat_max_context_chars", "Maks tegn kontekst", "Chat (intern RAG)", "number",

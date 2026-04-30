@@ -349,6 +349,62 @@ code { background: var(--obsidian-soft); padding: 1px 6px; border-radius: 4px; }
   box-shadow: 0 0 0 4px rgba(3, 2, 19, 0.06);
 }
 
+/* ─── Status banner (sticky top of admin) ────────────────────────── */
+.status-banner {
+  position: sticky; top: 70px; z-index: 30;
+  background: var(--white);
+  border-bottom: 1px solid var(--obsidian-dim);
+  box-shadow: 0 2px 6px -2px rgba(3, 2, 19, 0.06);
+}
+.status-banner-inner {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 10px 22px;
+  max-width: 100%;
+}
+.status-banner-left {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.status-banner-right {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-left: auto;
+}
+.status-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 12px; border-radius: 999px;
+  font-size: 12.5px; color: var(--grey-700);
+  background: var(--ghost); border: 1px solid var(--grey-100);
+}
+.status-pill.muted { background: transparent; border-color: transparent; }
+.status-pill strong { color: var(--obsidian); font-weight: 700; }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--grey-300);
+}
+.status-running { background: var(--green-dim); border-color: rgba(30, 139, 111, 0.3); color: var(--green); }
+.status-running .status-dot { background: var(--green); animation: pulse-dot 1.6s ease-in-out infinite; }
+.status-warn    { background: var(--cream-dim); border-color: rgba(217, 154, 44, 0.3); color: #b07a14; }
+.status-warn    .status-dot { background: #d99a2c; }
+.status-idle    { background: var(--ghost); }
+.status-idle    .status-dot { background: var(--grey-300); }
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(30, 139, 111, 0.4); }
+  50%      { box-shadow: 0 0 0 5px rgba(30, 139, 111, 0); }
+}
+
+.status-alert {
+  padding: 4px 12px; border-radius: 6px; font-size: 12.5px;
+  max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: help;
+}
+.status-alert-error { background: var(--rose-dim); color: #b03030; border: 1px solid #f3c8c8; }
+.status-alert-warn  { background: var(--cream-dim); color: #b07a14; border: 1px solid rgba(176, 122, 20, 0.3); }
+.status-alert-info  { background: var(--ghost); color: var(--grey-700); }
+
+@media (max-width: 760px) {
+  .status-banner-inner { flex-direction: column; align-items: flex-start; }
+  .status-banner-right { margin-left: 0; }
+}
+
 /* ─── Admin shell ────────────────────────────────────────────────── */
 .admin-shell {
   display: grid; grid-template-columns: 280px 1fr; gap: 0;
@@ -855,6 +911,28 @@ code { background: var(--obsidian-soft); padding: 1px 6px; border-radius: 4px; }
   font-size: 12px; max-height: 320px; overflow: auto;
 }
 .btn-copy { padding: 4px 12px; font-size: 12px; }
+.token-preview {
+  font-family: var(--font-mono); font-size: 12px;
+  background: var(--ghost); padding: 4px 10px; border-radius: 6px;
+  display: inline-block;
+}
+.fresh-token {
+  margin-top: 12px; padding: 14px 16px;
+  background: var(--cream-dim); border-radius: var(--radius);
+  border: 1px solid rgba(176, 122, 20, 0.3);
+}
+.fresh-token-warning {
+  font-size: 13px; color: #b07a14; margin-bottom: 10px;
+}
+.fresh-token-row {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.fresh-token-row code {
+  flex: 1; padding: 8px 12px; background: var(--white);
+  border: 1px solid var(--grey-200); border-radius: 6px;
+  font-family: var(--font-mono); font-size: 12px;
+  word-break: break-all;
+}
 
 /* ─── Health / Systemstatus ──────────────────────────────────────── */
 .health-actions {
