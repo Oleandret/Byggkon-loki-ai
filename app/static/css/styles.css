@@ -678,6 +678,17 @@ code { background: var(--obsidian-soft); padding: 1px 6px; border-radius: 4px; }
 .folder-actions {
   display: flex; align-items: center; gap: 14px; margin-top: 16px;
 }
+.folder-list.nested {
+  margin: 6px 0 0 26px;
+  padding: 0;
+  border-left: 2px solid var(--grey-100);
+  padding-left: 12px;
+}
+.site-block { padding: 12px 10px; }
+.site-head {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 4px;
+}
+.site-head a { color: var(--green); }
 
 /* ─── MCP tab ────────────────────────────────────────────────────── */
 .connection-table {

@@ -206,6 +206,10 @@ FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec("sync_folder_selections", "Mappeutvalg per bruker (JSON)", "Synkronisering", "textarea",
               "Settes via Mapper-fanen. Manuell redigering kun for power-users.",
               advanced=True),
+    FieldSpec("sync_sharepoint_drive_ids", "SharePoint drive-IDs (CSV)", "Synkronisering", "textarea",
+              "Komma-separerte drive-IDs for SharePoint-områder (Teams-mapper, fellesmapper). "
+              "Plukkes via Mapper-fanen. Disse indekseres alltid, uavhengig av SYNC_SCOPE.",
+              advanced=True),
 )
 
 

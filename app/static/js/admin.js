@@ -801,6 +801,91 @@
     });
   }
 
+  // ─── SharePoint sites picker ──────────────────────────────────────
+  let _sitesState = { selectedDriveIds: new Set(), sites: [] };
+
+  document.getElementById("sites-load-btn")?.addEventListener("click", async () => {
+    const tree = document.getElementById("sites-tree");
+    const status = document.getElementById("sites-load-status");
+    tree.innerHTML = `<p class="muted">Henter SharePoint-områder…</p>`;
+    status.textContent = "";
+    try {
+      const r = await api("GET", "/api/graph/sites");
+      if (r.error) {
+        tree.innerHTML = `<p class="err">Feil: ${escapeHtml(r.error)}</p>`;
+        return;
+      }
+      _sitesState.sites = r.sites || [];
+      _sitesState.selectedDriveIds = new Set();
+      for (const s of _sitesState.sites) {
+        for (const d of s.drives || []) {
+          if (d.selected) _sitesState.selectedDriveIds.add(d.id);
+        }
+      }
+      tree.innerHTML = renderSitesTree(_sitesState.sites);
+      wireSitesTree();
+      status.textContent = `${_sitesState.sites.length} områder funnet · ${_sitesState.selectedDriveIds.size} valgt`;
+    } catch (e) {
+      tree.innerHTML = `<p class="err">Feil: ${escapeHtml(e.message)}</p>`;
+    }
+  });
+
+  function renderSitesTree(sites) {
+    if (!sites.length) {
+      return `<p class="muted">Ingen SharePoint-områder funnet. Sjekk at Sites.Read.All er gitt admin consent i Entra ID.</p>`;
+    }
+    return `<ul class="folder-list">${sites
+      .map((s) => `
+        <li class="folder-item site-block">
+          <div class="site-head">
+            <strong>${escapeHtml(s.name)}</strong>
+            ${s.web_url ? `<a href="${escapeHtml(s.web_url)}" target="_blank" rel="noopener" class="muted small">↗ åpne</a>` : ""}
+          </div>
+          <ul class="folder-list nested">
+            ${(s.drives || [])
+              .map((d) => {
+                const checked = _sitesState.selectedDriveIds.has(d.id) ? "checked" : "";
+                return `
+                  <li class="folder-item">
+                    <label>
+                      <input type="checkbox" data-site-drive="${escapeHtml(d.id)}" ${checked}/>
+                      <span class="folder-name">${escapeHtml(d.name)}</span>
+                      <span class="muted small">${escapeHtml(d.drive_type)}</span>
+                    </label>
+                  </li>`;
+              })
+              .join("")}
+          </ul>
+        </li>`)
+      .join("")}</ul>`;
+  }
+
+  function wireSitesTree() {
+    $$("[data-site-drive]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        if (cb.checked) _sitesState.selectedDriveIds.add(cb.dataset.siteDrive);
+        else _sitesState.selectedDriveIds.delete(cb.dataset.siteDrive);
+        const status = document.getElementById("sites-load-status");
+        if (status) status.textContent = `${_sitesState.selectedDriveIds.size} valgt`;
+      });
+    });
+  }
+
+  document.getElementById("sites-save-btn")?.addEventListener("click", async () => {
+    const status = document.getElementById("sites-save-status");
+    status.textContent = "Lagrer…";
+    try {
+      const r = await api("POST", "/api/graph/sharepoint-selection", {
+        drive_ids: Array.from(_sitesState.selectedDriveIds),
+      });
+      status.style.color = "#1e8b6f";
+      status.textContent = `Lagret ${r.count} drive(s). Tar effekt på neste synkronisering.`;
+    } catch (e) {
+      status.style.color = "#b03030";
+      status.textContent = `Feil: ${e.message}`;
+    }
+  });
+
   document.getElementById("folder-save-btn")?.addEventListener("click", async () => {
     if (!_folderState.user) return;
     const status = document.getElementById("folder-save-status");

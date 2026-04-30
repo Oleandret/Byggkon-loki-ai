@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     sync_include_paths: str = ""  # newline- or comma-separated path prefixes to include
     sync_exclude_paths: str = ""  # newline- or comma-separated path prefixes to skip
     sync_folder_selections: str = ""  # JSON: {"user@x": ["/Documents", ...]}
+    # Extra SharePoint document-library drive IDs to always include in
+    # discovery, regardless of SYNC_SCOPE. Picked via the Mapper UI.
+    sync_sharepoint_drive_ids: str = ""  # comma-separated drive IDs
     max_file_bytes: int = 50 * 1024 * 1024
 
     # Scheduler
@@ -135,6 +138,9 @@ class Settings(BaseSettings):
 
     def drive_ids_list(self) -> list[str]:
         return [d.strip() for d in self.sync_drive_ids.split(",") if d.strip()]
+
+    def sharepoint_drive_ids_list(self) -> list[str]:
+        return [d.strip() for d in self.sync_sharepoint_drive_ids.split(",") if d.strip()]
 
     def resolved_openai_index(self) -> str:
         """Use the explicit OpenAI index name, fall back to legacy pinecone_index."""

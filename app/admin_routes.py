@@ -661,6 +661,67 @@ async def api_graph_folders(user: str) -> dict:
     return {"drive_id": drive_id, "user": user, "folders": folders, "selected_paths": selections}
 
 
+@api.get("/graph/sites")
+async def api_graph_sites() -> dict:
+    """List SharePoint sites in the tenant with their document libraries.
+
+    Used by the Mapper tab so the user can pick the company "fellesmappe"
+    / Teams library without enabling the broad SYNC_SCOPE=all_users_and_sharepoint.
+    """
+    if _app_state.graph is None:
+        raise HTTPException(503, "Graph not configured")
+    selected = set(
+        d.strip() for d in _app_state.settings.sync_sharepoint_drive_ids.split(",")
+        if d.strip()
+    )
+    out = []
+    seen_drives: set[str] = set()
+    try:
+        async for site in _app_state.graph.iter_sharepoint_sites():
+            site_id = site.get("id")
+            if not site_id:
+                continue
+            label = site.get("displayName") or site.get("name") or "Site"
+            web_url = site.get("webUrl") or ""
+            site_drives = []
+            try:
+                async for drv in _app_state.graph.iter_site_drives(site_id):
+                    did = drv.get("id")
+                    if not did or did in seen_drives:
+                        continue
+                    seen_drives.add(did)
+                    site_drives.append({
+                        "id": did,
+                        "name": drv.get("name") or "Documents",
+                        "drive_type": drv.get("driveType") or "documentLibrary",
+                        "selected": did in selected,
+                    })
+            except Exception as e:  # noqa: BLE001
+                log.warning("graph.site_drives.error", site_id=site_id, err=str(e))
+            if site_drives:
+                out.append({
+                    "id": site_id,
+                    "name": str(label),
+                    "web_url": web_url,
+                    "drives": site_drives,
+                })
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e), "sites": []}
+    return {"sites": out, "selected_count": len(selected)}
+
+
+@api.post("/graph/sharepoint-selection")
+async def api_graph_sharepoint_selection(payload: dict) -> dict:
+    """Save the picked SharePoint drive IDs."""
+    drive_ids = payload.get("drive_ids") or []
+    if not isinstance(drive_ids, list):
+        raise HTTPException(400, "drive_ids must be a list")
+    cleaned = ",".join(d for d in (str(x).strip() for x in drive_ids) if d)
+    _app_state.settings_store.set_overrides({"sync_sharepoint_drive_ids": cleaned})
+    _app_state.settings = _app_state.settings_store.effective_settings()
+    return {"ok": True, "count": len(drive_ids)}
+
+
 @api.post("/graph/folder-selection")
 async def api_graph_folder_selection(payload: dict) -> dict:
     """Save the per-user folder selection back into settings."""

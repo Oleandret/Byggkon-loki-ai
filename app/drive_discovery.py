@@ -48,6 +48,35 @@ async def discover_drives(graph: GraphClient, settings: Settings) -> list[DriveR
     drives: list[DriveRef] = []
     seen_ids: set[str] = set()
 
+    # Always include manually-picked SharePoint drives (from Mapper UI),
+    # regardless of scope. These are typically the company "fellesmappe"
+    # / Teams document libraries.
+    for d in settings.sharepoint_drive_ids_list():
+        if d in seen_ids:
+            continue
+        info = await graph.get_drive(d)
+        label = "SharePoint"
+        if info:
+            owner = info.get("owner") or {}
+            site = (info.get("parentReference") or {}).get("siteId")
+            label = (
+                (owner.get("user") or {}).get("displayName")
+                or (owner.get("group") or {}).get("displayName")
+                or info.get("name")
+                or label
+            )
+            seen_ids.add(d)
+            drives.append(
+                DriveRef(
+                    drive_id=d,
+                    drive_type=info.get("driveType", "documentLibrary"),
+                    owner_label=str(label),
+                    site_id=site,
+                )
+            )
+        else:
+            log.warning("discovery.sharepoint_drive.skip", drive_id=d, reason="not accessible")
+
     if scope == SyncScope.USERS_CSV:
         upns = settings.users_list()
         log.info("discovery.users_csv", count=len(upns))

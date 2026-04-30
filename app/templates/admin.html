@@ -121,12 +121,42 @@
     <section class="tab-pane" data-tab-pane="folders">
       <header class="pane-head">
         <p class="eyebrow">Mappeutvalg</p>
-        <h1 class="heading-xl">Velg mapper i OneDrive</h1>
+        <h1 class="heading-xl">Velg mapper og fellesområder</h1>
         <p class="muted">
-          Velg en bruker, bla i deres mapper, og kryss av mapper du vil
-          inkludere i synkronisering. Krever at Microsoft Graph er konfigurert.
+          Velg hvilke OneDrive-mapper og SharePoint-fellesområder
+          (Teams-mapper, dokumentbiblioteker) som skal synkroniseres. Krever
+          at Microsoft Graph er konfigurert med <code>Sites.Read.All</code>-tillatelse.
         </p>
       </header>
+
+      <!-- ─── SharePoint section ──────────────────────────────── -->
+      <h2 class="heading-sm mt-l">Fellesområder (SharePoint &amp; Teams)</h2>
+      <p class="muted small">
+        Hvert SharePoint-område har ett eller flere "drives" — typisk én
+        per Microsoft Teams-team. Kryss av de du vil indeksere.
+      </p>
+
+      <div class="folder-shell">
+        <div class="folder-pickers">
+          <button type="button" id="sites-load-btn" class="btn btn-secondary">Last SharePoint-områder</button>
+          <span id="sites-load-status" class="muted small"></span>
+        </div>
+
+        <div id="sites-tree" class="folder-tree">
+          <p class="muted">Klikk "Last SharePoint-områder" for å begynne.</p>
+        </div>
+
+        <div class="folder-actions">
+          <button type="button" id="sites-save-btn" class="btn btn-primary">Lagre SharePoint-utvalg</button>
+          <span id="sites-save-status" class="muted small"></span>
+        </div>
+      </div>
+
+      <!-- ─── Personal OneDrive section ────────────────────────── -->
+      <h2 class="heading-sm mt-l">Personlige OneDrives</h2>
+      <p class="muted small">
+        Velg en bruker og kryss av topp-nivå-mapper i deres OneDrive.
+      </p>
 
       <div class="folder-shell">
         <div class="folder-pickers">
