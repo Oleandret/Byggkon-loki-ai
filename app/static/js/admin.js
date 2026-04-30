@@ -143,8 +143,11 @@
   function renderRunRow(r) {
     const expanded = _runsState.expanded.has(r.id);
     const isActive = !r.finished_at;
+    const interrupted = (r.notes || "").includes("INTERRUPTED");
     const statusBadge = isActive
       ? `<span class="phase-tag" style="background: var(--green-dim); color: var(--green);">PÅGÅR</span>`
+      : interrupted
+      ? `<span class="phase-tag" style="background: var(--cream-dim); color: #b07a14;">AVBRUTT</span>`
       : r.errors > 0
       ? `<span class="phase-tag" style="background: var(--rose-dim); color: #b03030;">FEIL</span>`
       : `<span class="phase-tag" style="background: var(--obsidian-soft); color: var(--obsidian);">FERDIG</span>`;

@@ -242,6 +242,90 @@ class StateStore:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def update_run_stats(
+        self,
+        run_id: int,
+        *,
+        drives_scanned: int,
+        files_indexed: int,
+        files_deleted: int,
+        files_skipped: int,
+        errors: int,
+    ) -> None:
+        """Mid-run update of running totals so the Runs tab shows live counts
+        without waiting for finish_run()."""
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE sync_runs
+                SET drives_scanned = ?, files_indexed = ?, files_deleted = ?,
+                    files_skipped = ?, errors = ?
+                WHERE id = ?
+                """,
+                (drives_scanned, files_indexed, files_deleted,
+                 files_skipped, errors, run_id),
+            )
+
+    def mark_orphaned_runs_interrupted(self) -> int:
+        """Find any sync_runs row with finished_at IS NULL — these are
+        leftovers from a previous container that died mid-run. Mark them
+        finished with the best stats we can recover from sync_progress.
+        Returns the number of rows fixed."""
+        with self._lock, self._connect() as conn:
+            orphans = conn.execute(
+                "SELECT id FROM sync_runs WHERE finished_at IS NULL"
+            ).fetchall()
+            if not orphans:
+                return 0
+
+            # Best-effort recovery: sum up the per-drive progress to populate
+            # files_indexed for the most recent orphan. Older orphans get
+            # zeros — we have no way to recover their state.
+            progress_total = conn.execute(
+                "SELECT COALESCE(SUM(files_processed), 0) AS p, "
+                "       COALESCE(SUM(files_seen), 0) AS s, "
+                "       COUNT(*) AS d "
+                "FROM sync_progress"
+            ).fetchone()
+            recovered_indexed = int(progress_total["p"] or 0)
+            recovered_seen = int(progress_total["s"] or 0)
+            recovered_drives = int(progress_total["d"] or 0)
+
+            # Apply recovered stats to the most recent orphan only.
+            most_recent = max(o["id"] for o in orphans)
+            for row in orphans:
+                if row["id"] == most_recent and recovered_indexed:
+                    conn.execute(
+                        """
+                        UPDATE sync_runs
+                        SET finished_at = ?,
+                            files_indexed = ?,
+                            files_skipped = MAX(files_skipped, ? - ?),
+                            drives_scanned = MAX(drives_scanned, ?),
+                            notes = COALESCE(NULLIF(notes, ''), '') || ' | INTERRUPTED'
+                        WHERE id = ?
+                        """,
+                        (time.time(), recovered_indexed,
+                         recovered_seen, recovered_indexed,
+                         recovered_drives, row["id"]),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE sync_runs
+                        SET finished_at = ?,
+                            notes = COALESCE(NULLIF(notes, ''), '') || ' | INTERRUPTED'
+                        WHERE id = ?
+                        """,
+                        (time.time(), row["id"]),
+                    )
+            log.info(
+                "state.orphaned_runs.fixed",
+                count=len(orphans),
+                recovered_indexed=recovered_indexed,
+            )
+            return len(orphans)
+
     # ─── progress (live during a sync run) ───────────────────────────
     def reset_progress(self) -> None:
         with self._lock, self._connect() as conn:

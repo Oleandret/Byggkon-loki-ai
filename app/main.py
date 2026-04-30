@@ -154,6 +154,17 @@ async def lifespan(app: FastAPI):
     # come up so the user can configure.
     _state.state = StateStore(_state.settings.state_dir)
 
+    # Self-heal: any sync_runs row left as PÅGÅR from a previous container
+    # that died mid-run is dead — mark it interrupted so the UI doesn't
+    # show ghost concurrent runs.
+    fixed = _state.state.mark_orphaned_runs_interrupted()
+    if fixed:
+        log.warning(
+            "state.cleared_orphan_runs",
+            count=fixed,
+            hint="Previous container died mid-sync; marking those runs interrupted.",
+        )
+
     # Track per-client init errors so the admin UI / test endpoints can
     # surface the *real* reason a client is missing.
     _state.init_errors = {}

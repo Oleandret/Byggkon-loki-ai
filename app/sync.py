@@ -391,6 +391,23 @@ class SyncOrchestrator:
                     file_name=item.get("name"),
                     message=f"{res.chunk_count} tekst-chunks · {res.image_count} bilder",
                 )
+                # Live update sync_runs every 10 successful files so the
+                # Runs tab shows real-time counters (otherwise files_indexed
+                # is only written at finish_run() at end of run).
+                if stats.files_indexed % 10 == 0:
+                    rid = getattr(self, "_run_id", None)
+                    if rid is not None:
+                        try:
+                            self._state.update_run_stats(
+                                rid,
+                                drives_scanned=stats.drives_scanned,
+                                files_indexed=stats.files_indexed,
+                                files_deleted=stats.files_deleted,
+                                files_skipped=stats.files_skipped,
+                                errors=stats.errors,
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
             elif res.skipped_reason:
                 stats.files_skipped += 1
                 # Only log non-trivial skips so we don't drown the log in
