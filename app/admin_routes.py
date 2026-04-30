@@ -337,8 +337,38 @@ async def api_progress() -> dict:
 
 @api.post("/sync")
 async def api_trigger_sync() -> dict:
+    """Trigger a sync run. Self-heals: if orchestrator was None at boot but
+    all dependencies are now ready, construct it on the fly so the user
+    doesn't need a restart."""
+    # Self-heal: rebuild orchestrator on demand if everything is in place.
     if _app_state.orchestrator is None:
-        return {"status": "skipped", "reason": "Not configured. Fill in Graph/OpenAI/Pinecone settings first."}
+        graph = getattr(_app_state, "graph", None)
+        embedders = getattr(_app_state, "embedders", {}) or {}
+        pinecone = getattr(_app_state, "pinecone", None)
+        missing = []
+        if graph is None: missing.append("Microsoft Graph")
+        if not embedders: missing.append("embedding provider")
+        if pinecone is None: missing.append("Pinecone")
+        if missing:
+            return {
+                "status": "skipped",
+                "reason": f"Mangler: {', '.join(missing)}. Sjekk Systemstatus-fanen.",
+                "init_errors": getattr(_app_state, "init_errors", {}) or {},
+            }
+        # All components ready — build orchestrator now.
+        from .sync import SyncOrchestrator
+        _app_state.orchestrator = SyncOrchestrator(
+            _app_state.settings, graph, embedders, pinecone, _app_state.state
+        )
+        log.info("orchestrator.constructed_on_demand")
+
+    # Already running?
+    if getattr(_app_state.orchestrator, "_running", False):
+        return {
+            "status": "already_running",
+            "reason": "En synkronisering pågår allerede. Følg med i Kjøringer.",
+        }
+
     asyncio.create_task(_app_state.orchestrator.run_sync())
     return {"status": "started"}
 

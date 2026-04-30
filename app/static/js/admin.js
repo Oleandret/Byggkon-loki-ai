@@ -558,12 +558,31 @@
     const status = $("#run-sync-status");
     const btn = $("#run-sync-btn");
     btn.disabled = true;
+    status.style.color = "";
     status.textContent = "Trigger sync…";
     try {
-      await api("POST", "/api/sync");
-      status.textContent = "Synkronisering startet. Følg med i Kjøringer.";
+      const r = await api("POST", "/api/sync");
+      if (r.status === "started") {
+        status.style.color = "#1e8b6f";
+        status.textContent = "Synkronisering startet. Følg med i Kjøringer.";
+      } else if (r.status === "already_running") {
+        status.style.color = "#b07a14";
+        status.textContent = r.reason || "En synkronisering pågår allerede.";
+      } else if (r.status === "skipped") {
+        status.style.color = "#b03030";
+        const errs = r.init_errors || {};
+        const errSummary = Object.entries(errs)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(" · ");
+        status.textContent =
+          (r.reason || "Synkronisering hoppet over.") +
+          (errSummary ? ` [${errSummary}]` : "");
+      } else {
+        status.textContent = JSON.stringify(r);
+      }
       setTimeout(loadStats, 2000);
     } catch (e) {
+      status.style.color = "#b03030";
       status.textContent = `Feil: ${e.message}`;
     } finally {
       btn.disabled = false;
