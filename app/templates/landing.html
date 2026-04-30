@@ -38,6 +38,197 @@
       meningsfulle biter og lager matematiske representasjoner som lar AI søke på betydning.
     </p>
 
+    <!-- ─── Animated flow diagram ─────────────────────────────────── -->
+    <div class="flow-wrap">
+      <svg class="flow" viewBox="0 0 1200 320" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <!-- Glow + gradient -->
+          <linearGradient id="lokiLine" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stop-color="#03021300" />
+            <stop offset="50%" stop-color="#1e8b6f" />
+            <stop offset="100%" stop-color="#03021300" />
+          </linearGradient>
+          <linearGradient id="lokiLineSplit" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stop-color="#03021300" />
+            <stop offset="50%" stop-color="#1e8b6f" />
+            <stop offset="100%" stop-color="#03021300" />
+          </linearGradient>
+          <radialGradient id="lokiNodeFill" cx="50%" cy="40%" r="60%">
+            <stop offset="0%" stop-color="#ffffff" />
+            <stop offset="100%" stop-color="#f1f3f6" />
+          </radialGradient>
+          <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#030213" flood-opacity="0.10"/>
+          </filter>
+
+          <!-- Bezier paths the dots travel along -->
+          <path id="path-1-2" d="M 170 160 Q 240 160, 310 160" />
+          <path id="path-2-3" d="M 410 160 Q 480 160, 550 160" />
+          <path id="path-3-4a" d="M 650 160 Q 720 120, 790 110" />
+          <path id="path-3-4b" d="M 650 160 Q 720 200, 790 210" />
+          <path id="path-4a-5" d="M 890 110 Q 960 110, 1030 145" />
+          <path id="path-4b-5" d="M 890 210 Q 960 210, 1030 175" />
+        </defs>
+
+        <!-- Connection lines -->
+        <use href="#path-1-2"  stroke="url(#lokiLine)" stroke-width="2" fill="none" />
+        <use href="#path-2-3"  stroke="url(#lokiLine)" stroke-width="2" fill="none" />
+        <use href="#path-3-4a" stroke="url(#lokiLineSplit)" stroke-width="2" fill="none" />
+        <use href="#path-3-4b" stroke="url(#lokiLineSplit)" stroke-width="2" fill="none" />
+        <use href="#path-4a-5" stroke="url(#lokiLineSplit)" stroke-width="2" fill="none" />
+        <use href="#path-4b-5" stroke="url(#lokiLineSplit)" stroke-width="2" fill="none" />
+
+        <!-- Animated dots (data flowing) -->
+        <circle r="5" fill="#1e8b6f">
+          <animateMotion dur="2.4s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#path-1-2"/>
+          </animateMotion>
+        </circle>
+        <circle r="5" fill="#1e8b6f" opacity="0.7">
+          <animateMotion dur="2.4s" begin="1.2s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#path-1-2"/>
+          </animateMotion>
+        </circle>
+
+        <circle r="5" fill="#1e8b6f">
+          <animateMotion dur="2.4s" begin="0.6s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#path-2-3"/>
+          </animateMotion>
+        </circle>
+        <circle r="5" fill="#1e8b6f" opacity="0.7">
+          <animateMotion dur="2.4s" begin="1.8s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#path-2-3"/>
+          </animateMotion>
+        </circle>
+
+        <!-- Top branch (OpenAI) dots -->
+        <circle r="5" fill="#1e8b6f">
+          <animateMotion dur="2.4s" begin="1.2s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#path-3-4a"/>
+          </animateMotion>
+        </circle>
+        <!-- Bottom branch (Gemini) dots -->
+        <circle r="5" fill="#1e8b6f">
+          <animateMotion dur="2.4s" begin="1.5s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#path-3-4b"/>
+          </animateMotion>
+        </circle>
+
+        <!-- Top-branch tail -->
+        <circle r="5" fill="#1e8b6f">
+          <animateMotion dur="2.4s" begin="1.8s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#path-4a-5"/>
+          </animateMotion>
+        </circle>
+        <circle r="5" fill="#1e8b6f">
+          <animateMotion dur="2.4s" begin="2.1s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#path-4b-5"/>
+          </animateMotion>
+        </circle>
+
+        <!-- ── Node 1: OneDrive ── -->
+        <g filter="url(#softShadow)">
+          <rect x="20" y="120" width="150" height="80" rx="14" fill="url(#lokiNodeFill)" stroke="#0302131a"/>
+          <g transform="translate(95 150)">
+            <!-- cloud icon -->
+            <path d="M -22 6 Q -22 -6 -10 -8 Q -8 -16 4 -14 Q 14 -18 18 -8 Q 26 -8 24 4 Q 24 10 16 12 L -16 12 Q -22 12 -22 6 Z"
+                  fill="#1e8b6f" opacity="0.18"/>
+            <path d="M -22 6 Q -22 -6 -10 -8 Q -8 -16 4 -14 Q 14 -18 18 -8 Q 26 -8 24 4 Q 24 10 16 12 L -16 12 Q -22 12 -22 6 Z"
+                  fill="none" stroke="#1e8b6f" stroke-width="1.6"/>
+          </g>
+          <text x="95" y="184" text-anchor="middle" font-family="Inter, sans-serif"
+                font-size="13" font-weight="700" fill="#030213">OneDrive</text>
+        </g>
+
+        <!-- ── Node 2: Microsoft Graph ── -->
+        <g filter="url(#softShadow)">
+          <rect x="260" y="120" width="150" height="80" rx="14" fill="url(#lokiNodeFill)" stroke="#0302131a"/>
+          <g transform="translate(335 150)">
+            <!-- delta icon -->
+            <path d="M 0 -16 L 16 12 L -16 12 Z" fill="none" stroke="#1e8b6f" stroke-width="1.8"/>
+            <circle cx="0" cy="2" r="2.5" fill="#1e8b6f"/>
+          </g>
+          <text x="335" y="184" text-anchor="middle" font-family="Inter, sans-serif"
+                font-size="13" font-weight="700" fill="#030213">Graph delta-sync</text>
+        </g>
+
+        <!-- ── Node 3: Unstructured ── -->
+        <g filter="url(#softShadow)">
+          <rect x="500" y="120" width="150" height="80" rx="14" fill="url(#lokiNodeFill)" stroke="#0302131a"/>
+          <g transform="translate(575 150)">
+            <!-- doc lines -->
+            <rect x="-12" y="-14" width="24" height="28" rx="3" fill="none" stroke="#1e8b6f" stroke-width="1.6"/>
+            <line x1="-7" y1="-7" x2="7" y2="-7" stroke="#1e8b6f" stroke-width="1.4"/>
+            <line x1="-7" y1="-2" x2="7" y2="-2" stroke="#1e8b6f" stroke-width="1.4"/>
+            <line x1="-7" y1="3" x2="3" y2="3" stroke="#1e8b6f" stroke-width="1.4"/>
+          </g>
+          <text x="575" y="184" text-anchor="middle" font-family="Inter, sans-serif"
+                font-size="13" font-weight="700" fill="#030213">Unstructured (parse)</text>
+        </g>
+
+        <!-- ── Node 4a: OpenAI ── -->
+        <g filter="url(#softShadow)">
+          <rect x="740" y="70" width="150" height="80" rx="14" fill="url(#lokiNodeFill)" stroke="#0302131a"/>
+          <g transform="translate(815 100)">
+            <circle cx="0" cy="0" r="14" fill="none" stroke="#1e8b6f" stroke-width="1.6"/>
+            <path d="M -7 -3 L 0 4 L 7 -3" fill="none" stroke="#1e8b6f" stroke-width="1.6" stroke-linecap="round"/>
+          </g>
+          <text x="815" y="134" text-anchor="middle" font-family="Inter, sans-serif"
+                font-size="13" font-weight="700" fill="#030213">OpenAI embeddings</text>
+        </g>
+
+        <!-- ── Node 4b: Gemini ── -->
+        <g filter="url(#softShadow)">
+          <rect x="740" y="170" width="150" height="80" rx="14" fill="url(#lokiNodeFill)" stroke="#0302131a"/>
+          <g transform="translate(815 200)">
+            <!-- diamond -->
+            <path d="M 0 -14 L 14 0 L 0 14 L -14 0 Z" fill="none" stroke="#1e8b6f" stroke-width="1.6"/>
+            <circle cx="0" cy="0" r="3" fill="#1e8b6f"/>
+          </g>
+          <text x="815" y="234" text-anchor="middle" font-family="Inter, sans-serif"
+                font-size="13" font-weight="700" fill="#030213">Gemini multimodal</text>
+        </g>
+
+        <!-- ── Node 5: Pinecone ── -->
+        <g filter="url(#softShadow)">
+          <rect x="980" y="120" width="170" height="80" rx="14" fill="#030213" stroke="#0302131a"/>
+          <g transform="translate(1010 160)">
+            <!-- vector grid icon -->
+            <circle cx="0" cy="-6" r="2" fill="#1e8b6f"/>
+            <circle cx="6" cy="-6" r="2" fill="#1e8b6f" opacity="0.7"/>
+            <circle cx="12" cy="-6" r="2" fill="#1e8b6f" opacity="0.5"/>
+            <circle cx="0" cy="0" r="2" fill="#1e8b6f" opacity="0.7"/>
+            <circle cx="6" cy="0" r="2" fill="#1e8b6f"/>
+            <circle cx="12" cy="0" r="2" fill="#1e8b6f" opacity="0.7"/>
+            <circle cx="0" cy="6" r="2" fill="#1e8b6f" opacity="0.5"/>
+            <circle cx="6" cy="6" r="2" fill="#1e8b6f" opacity="0.7"/>
+            <circle cx="12" cy="6" r="2" fill="#1e8b6f"/>
+          </g>
+          <text x="1095" y="160" text-anchor="middle" font-family="Inter, sans-serif"
+                font-size="13" font-weight="700" fill="#ffffff">Pinecone</text>
+          <text x="1095" y="178" text-anchor="middle" font-family="Inter, sans-serif"
+                font-size="11" font-weight="500" fill="#1e8b6f">2 indekser</text>
+        </g>
+
+        <!-- ── MCP arrow downstream ── -->
+        <g transform="translate(1065 245)">
+          <path d="M 0 0 L 0 30" stroke="#0302131a" stroke-width="2" stroke-dasharray="4 4" fill="none"/>
+          <path d="M -4 26 L 0 32 L 4 26" stroke="#1e8b6f" stroke-width="2" fill="none"/>
+        </g>
+        <g filter="url(#softShadow)">
+          <rect x="980" y="280" width="170" height="32" rx="8" fill="#fff" stroke="#0302131a"/>
+          <text x="1065" y="301" text-anchor="middle" font-family="Inter, sans-serif"
+                font-size="12" font-weight="700" fill="#030213">MCP → Claude / Cursor</text>
+        </g>
+      </svg>
+
+      <p class="flow-caption muted small">
+        Filer hentes inkrementelt fra OneDrive, parses lokalt med Unstructured,
+        embeddes med OpenAI og/eller Gemini, og lagres i to separate Pinecone-
+        indekser. Eksterne LLM-er kobles på via MCP.
+      </p>
+    </div>
+
     <ol class="steps">
       <li class="step">
         <span class="step-num">1</span>

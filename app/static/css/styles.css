@@ -536,6 +536,23 @@ code { background: var(--obsidian-soft); padding: 1px 6px; border-radius: 4px; }
 }
 .test-output.is-shown { display: block; }
 
+/* ─── Animated flow diagram (landing) ────────────────────────────── */
+.flow-wrap {
+  margin: 56px auto 24px;
+  max-width: 100%;
+}
+.flow {
+  width: 100%; height: auto; display: block;
+  max-width: 1200px; margin: 0 auto;
+}
+.flow-caption {
+  margin: 14px auto 0; max-width: 720px; text-align: center;
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .flow { font-size: 11px; }
+}
+
 /* ─── Progress / Fremdrift ───────────────────────────────────────── */
 .progress-overall {
   padding: 22px 24px;

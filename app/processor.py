@@ -12,7 +12,6 @@ import hashlib
 import os
 import shutil
 import tempfile
-import uuid
 from dataclasses import dataclass
 from typing import Optional
 
@@ -160,7 +159,10 @@ class Processor:
                     text_vecs = await embedder.embed_texts(texts)
                     payload: list[tuple[str, list[float], dict]] = []
                     for i, (chunk, vec) in enumerate(zip(parsed.chunks, text_vecs)):
-                        vid = f"text::{file_id}::{i}::{uuid.uuid4().hex[:6]}"
+                        # Deterministic ID: re-uploading the same file/chunk
+                        # produces the same id, so Pinecone upsert overwrites
+                        # cleanly even if SQLite state is lost.
+                        vid = f"text::{file_id}::{i}"
                         meta = {
                             **base_meta,
                             **chunk.metadata,
@@ -183,7 +185,7 @@ class Processor:
                         except Exception as e:  # noqa: BLE001
                             log.warning("process.image_embed.error", file=file_name, err=str(e))
                             continue
-                        vid = f"image::{file_id}::{j}::{uuid.uuid4().hex[:6]}"
+                        vid = f"image::{file_id}::{j}"
                         meta = {
                             **base_meta,
                             **blob.metadata,

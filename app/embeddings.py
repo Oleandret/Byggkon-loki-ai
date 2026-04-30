@@ -37,6 +37,12 @@ class BaseEmbedder(ABC):
     @abstractmethod
     async def embed_texts(self, texts: list[str]) -> list[list[float]]: ...
 
+    async def embed_query(self, text: str) -> list[float]:
+        """Embed a search query. Default: same as document; Gemini overrides
+        this to use task_type=RETRIEVAL_QUERY which yields markedly better
+        retrieval quality."""
+        return (await self.embed_texts([text]))[0]
+
     async def embed_image(self, data: bytes, mime: str) -> list[float]:
         raise NotImplementedError(f"{self.name} does not support image embedding")
 
@@ -116,6 +122,14 @@ class GeminiEmbedder(BaseEmbedder):
             out.extend(await self._embed_text_batch(batch))
         return out
 
+    def _embed_config(self, *, for_query: bool = False):
+        """Build EmbedContentConfig with sensible task_type and dimensionality."""
+        cfg = {
+            "output_dimensionality": self._settings.gemini_embedding_dimensions,
+            "task_type": "RETRIEVAL_QUERY" if for_query else "RETRIEVAL_DOCUMENT",
+        }
+        return self._types.EmbedContentConfig(**cfg)
+
     async def _embed_text_batch(self, batch: list[str]) -> list[list[float]]:
         async for retry in AsyncRetrying(
             stop=stop_after_attempt(5),
@@ -124,20 +138,20 @@ class GeminiEmbedder(BaseEmbedder):
             reraise=True,
         ):
             with retry:
-                # google-genai SDK is sync; offload the call.
+                # google-genai SDK is sync; offload to a thread.
                 resp = await asyncio.to_thread(
                     self._client.models.embed_content,
                     model=self._settings.gemini_embedding_model,
                     contents=batch,
-                    config=self._types.EmbedContentConfig(
-                        output_dimensionality=self._settings.gemini_embedding_dimensions,
-                    ),
+                    config=self._embed_config(),
                 )
                 return [list(e.values) for e in resp.embeddings]
         raise RuntimeError("gemini embed retry loop exhausted")  # pragma: no cover
 
-    # ─── Image ────────────────────────────────────────────────────────
-    async def embed_image(self, data: bytes, mime: str) -> list[float]:
+    async def embed_query(self, text: str) -> list[float]:
+        """Use RETRIEVAL_QUERY task_type for queries — the matching pair to
+        RETRIEVAL_DOCUMENT used during indexing. Gemini's embedding quality
+        on retrieval is significantly better when the pair is correct."""
         async for retry in AsyncRetrying(
             stop=stop_after_attempt(4),
             wait=wait_exponential(multiplier=1, min=1, max=20),
@@ -145,16 +159,35 @@ class GeminiEmbedder(BaseEmbedder):
             reraise=True,
         ):
             with retry:
-                content = self._types.Content(
-                    parts=[self._types.Part.from_bytes(data=data, mime_type=mime)]
-                )
                 resp = await asyncio.to_thread(
                     self._client.models.embed_content,
                     model=self._settings.gemini_embedding_model,
-                    contents=[content],
-                    config=self._types.EmbedContentConfig(
-                        output_dimensionality=self._settings.gemini_embedding_dimensions,
-                    ),
+                    contents=[text],
+                    config=self._embed_config(for_query=True),
+                )
+                return list(resp.embeddings[0].values)
+        raise RuntimeError("gemini query-embed retry loop exhausted")  # pragma: no cover
+
+    # ─── Image ────────────────────────────────────────────────────────
+    async def embed_image(self, data: bytes, mime: str) -> list[float]:
+        """Embed an image binary into the same vector space as text.
+
+        Per the Gemini Embedding 2 docs the simplest pattern is to pass a
+        Part.from_bytes(...) (or a list containing it) as `contents`.
+        """
+        async for retry in AsyncRetrying(
+            stop=stop_after_attempt(4),
+            wait=wait_exponential(multiplier=1, min=1, max=20),
+            retry=retry_if_exception_type(Exception),
+            reraise=True,
+        ):
+            with retry:
+                part = self._types.Part.from_bytes(data=data, mime_type=mime)
+                resp = await asyncio.to_thread(
+                    self._client.models.embed_content,
+                    model=self._settings.gemini_embedding_model,
+                    contents=[part],
+                    config=self._embed_config(),
                 )
                 emb = resp.embeddings[0]
                 return list(emb.values)
@@ -162,18 +195,27 @@ class GeminiEmbedder(BaseEmbedder):
 
 
 # ─── Factory ─────────────────────────────────────────────────────────
-def build_embedders(settings: Settings) -> dict[str, BaseEmbedder]:
+def build_embedders(
+    settings: Settings, *, errors_out: dict[str, str] | None = None
+) -> dict[str, BaseEmbedder]:
     """Return a {provider_name: embedder} dict for the configured providers.
 
-    Raises if a configured provider can't be built (missing key etc).
-    Callers in main.py wrap this in a safe-init so the app still boots.
+    Each provider is built independently — one failing provider does NOT
+    prevent the others from being constructed. Failures are captured in
+    `errors_out` (if supplied) so the admin UI can surface them.
     """
     out: dict[str, BaseEmbedder] = {}
     for name in settings.providers():
-        if name == "openai":
-            out["openai"] = OpenAIEmbedder(settings)
-        elif name == "gemini":
-            out["gemini"] = GeminiEmbedder(settings)
+        try:
+            if name == "openai":
+                out["openai"] = OpenAIEmbedder(settings)
+            elif name == "gemini":
+                out["gemini"] = GeminiEmbedder(settings)
+        except Exception as e:  # noqa: BLE001
+            err = f"{type(e).__name__}: {e}"
+            log.warning("embedder.init.skip", provider=name, err=err)
+            if errors_out is not None:
+                errors_out[name] = err
     return out
 
 

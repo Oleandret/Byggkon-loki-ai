@@ -97,8 +97,10 @@ def build_mcp_server(app_state) -> FastMCP:
         top_k = max(1, min(int(top_k or 10), 50))
 
         # 1. Embed the query in the same space as the index.
+        # For Gemini, embed_query uses task_type=RETRIEVAL_QUERY (the
+        # matching pair to RETRIEVAL_DOCUMENT used at indexing time).
         try:
-            qvec = (await embedder.embed_texts([query]))[0]
+            qvec = await embedder.embed_query(query)
         except Exception as e:  # noqa: BLE001
             return {"error": f"embedding failed: {e}"}
 

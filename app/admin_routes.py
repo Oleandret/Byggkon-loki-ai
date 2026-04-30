@@ -437,39 +437,169 @@ def _state_of(value: str) -> dict:
 
 @api.post("/test/openai")
 async def api_test_openai() -> dict:
-    embedders = getattr(_app_state, "embedders", {}) or {}
-    embedder = embedders.get("openai")
+    s = _app_state.settings
+    init_err = (getattr(_app_state, "init_errors", {}) or {}).get("openai")
+    cred = _state_of(s.openai_api_key)
+    selected = "openai" in s.providers()
+
+    embedder = (getattr(_app_state, "embedders", {}) or {}).get("openai")
     if embedder is None:
-        return {"ok": False, "error": "OpenAI not configured (missing api key or not selected as provider)"}
+        return {
+            "ok": False,
+            "stage": "client_init",
+            "error": init_err or (
+                "Provider 'openai' is not selected (EMBEDDING_PROVIDER)"
+                if not selected else "OpenAI client failed to construct"
+            ),
+            "credentials": {"OPENAI_API_KEY": cred},
+            "selected_as_provider": selected,
+            "hint": (
+                "Sett EMBEDDING_PROVIDER=openai eller =both, og fyll inn OPENAI_API_KEY."
+                if not selected or cred["status"] == "missing"
+                else "Sjekk at API-nøkkelen er gyldig (begynner med sk-)."
+            ),
+        }
     try:
         vec = await embedder.embed_texts(["Loki AI test."])
-        return {"ok": True, "dim": len(vec[0]), "model": _app_state.settings.openai_embedding_model}
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "error": str(e)}
+        msg = str(e)
+        hint = "Ukjent feil — se logg."
+        low = msg.lower()
+        if "401" in msg or "invalid" in low and "key" in low:
+            hint = "Ugyldig API-nøkkel. Lag en ny på platform.openai.com → API keys."
+        elif "model" in low and ("not found" in low or "does not exist" in low):
+            hint = (
+                f"Modellen '{s.openai_embedding_model}' er ikke tilgjengelig på "
+                "denne kontoen. Bytt til text-embedding-3-small eller sjekk kontoens tilganger."
+            )
+        elif "quota" in low or "rate" in low:
+            hint = "Quota- eller rate-limit. Vent litt og prøv igjen, eller øk usage-limit på OpenAI."
+        return {"ok": False, "stage": "api_call", "error": msg, "hint": hint}
+
+    return {
+        "ok": True,
+        "stage": "ok",
+        "dim": len(vec[0]),
+        "model": s.openai_embedding_model,
+        "credentials": {"OPENAI_API_KEY": cred},
+    }
 
 
 @api.post("/test/gemini")
 async def api_test_gemini() -> dict:
-    embedders = getattr(_app_state, "embedders", {}) or {}
-    embedder = embedders.get("gemini")
+    s = _app_state.settings
+    init_err = (getattr(_app_state, "init_errors", {}) or {}).get("gemini")
+    cred = _state_of(s.gemini_api_key)
+    selected = "gemini" in s.providers()
+
+    embedder = (getattr(_app_state, "embedders", {}) or {}).get("gemini")
     if embedder is None:
-        return {"ok": False, "error": "Gemini not configured (missing api key or not selected as provider)"}
+        return {
+            "ok": False,
+            "stage": "client_init",
+            "error": init_err or (
+                "Provider 'gemini' is not selected (EMBEDDING_PROVIDER)"
+                if not selected else "Gemini client failed to construct"
+            ),
+            "credentials": {"GEMINI_API_KEY": cred},
+            "selected_as_provider": selected,
+            "hint": (
+                "Sett EMBEDDING_PROVIDER=gemini eller =both, og fyll inn GEMINI_API_KEY "
+                "fra https://aistudio.google.com/apikey."
+                if not selected or cred["status"] == "missing"
+                else "Sjekk at google-genai-pakken er installert (krever ny redeploy etter requirements-endring)."
+            ),
+        }
     try:
         vec = await embedder.embed_texts(["Loki AI test."])
-        return {"ok": True, "dim": len(vec[0]), "model": _app_state.settings.gemini_embedding_model}
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "error": str(e)}
+        msg = str(e)
+        low = msg.lower()
+        hint = "Ukjent feil — se logg."
+        if "api key" in low or "401" in msg or "permission" in low:
+            hint = (
+                "API-nøkkel ugyldig eller mangler tillatelser. Lag en ny på "
+                "https://aistudio.google.com/apikey og sjekk at modellen er tilgjengelig i din region."
+            )
+        elif "model" in low and ("not found" in low or "404" in msg):
+            hint = (
+                f"Modellen '{s.gemini_embedding_model}' eksisterer ikke. Sjekk staving "
+                "(skal være 'gemini-embedding-2-preview' eller 'gemini-embedding-2'). "
+                "Modellen kan også være regionsbegrenset."
+            )
+        elif "quota" in low or "rate" in low or "429" in msg:
+            hint = "Quota- eller rate-limit. Vent litt eller hev grensen på AI Studio."
+        return {"ok": False, "stage": "api_call", "error": msg, "hint": hint}
+
+    return {
+        "ok": True,
+        "stage": "ok",
+        "dim": len(vec[0]),
+        "model": s.gemini_embedding_model,
+        "credentials": {"GEMINI_API_KEY": cred},
+    }
 
 
 @api.post("/test/pinecone")
 async def api_test_pinecone() -> dict:
+    s = _app_state.settings
+    init_err = (getattr(_app_state, "init_errors", {}) or {}).get("pinecone")
+    cred = _state_of(s.pinecone_api_key)
+
     if _app_state.pinecone is None:
-        return {"ok": False, "error": "Pinecone not configured (missing api key)"}
+        return {
+            "ok": False,
+            "stage": "client_init",
+            "error": init_err or "Pinecone client failed to construct",
+            "credentials": {"PINECONE_API_KEY": cred},
+            "hint": (
+                "Sett PINECONE_API_KEY i Railway og redeploy."
+                if cred["status"] == "missing"
+                else "Sjekk at API-nøkkelen er gyldig (begynner med pcsk_ eller pcn-)."
+            ),
+        }
+
+    indexes_configured = {
+        "openai": s.resolved_openai_index() if "openai" in s.providers() else None,
+        "gemini": s.resolved_gemini_index() if "gemini" in s.providers() else None,
+    }
+
     try:
         per_index = await _app_state.pinecone.index_stats()
-        return {"ok": True, "indexes": per_index}
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "error": str(e)}
+        return {
+            "ok": False,
+            "stage": "api_call",
+            "error": str(e),
+            "credentials": {"PINECONE_API_KEY": cred},
+            "indexes_configured": indexes_configured,
+        }
+
+    # If any index has an error in its stats, surface it
+    issues = [
+        f"{name}: {info['error']}"
+        for name, info in per_index.items()
+        if isinstance(info, dict) and info.get("error")
+    ]
+    if issues:
+        return {
+            "ok": False,
+            "stage": "index_describe",
+            "error": "; ".join(issues),
+            "indexes_configured": indexes_configured,
+            "indexes": per_index,
+            "hint": (
+                "Indeksen er konfigurert men finnes ikke i Pinecone. Kjør "
+                "`python -m scripts.bootstrap_pinecone` lokalt med riktige env-vars."
+            ),
+        }
+
+    return {
+        "ok": True,
+        "stage": "ok",
+        "indexes_configured": indexes_configured,
+        "indexes": per_index,
+    }
 
 
 # ─── Graph helpers used by the Folders tab ──────────────────────────
@@ -606,13 +736,18 @@ async def _check_graph() -> dict:
 
 async def _check_provider(name: str) -> dict:
     embedders = getattr(_app_state, "embedders", {}) or {}
+    init_errs = getattr(_app_state, "init_errors", {}) or {}
     embedder = embedders.get(name)
     if embedder is None:
         s = _app_state.settings
         wanted = s.embedding_provider.value
-        if wanted == name or wanted == "both":
-            return {"ok": False, "status": "warn", "detail": "Mangler API-nøkkel"}
-        return {"ok": True, "status": "ok", "detail": "Ikke valgt som provider"}
+        if wanted != name and wanted != "both":
+            return {"ok": True, "status": "ok", "detail": "Ikke valgt som provider"}
+        # Selected but missing — surface the actual init error if we have one.
+        err = init_errs.get(name)
+        if err:
+            return {"ok": False, "status": "warn", "detail": err}
+        return {"ok": False, "status": "warn", "detail": "Mangler API-nøkkel"}
     try:
         vec = await embedder.embed_texts(["health"])
         return {"ok": True, "detail": f"{embedder.dimensions} dim · model {embedder.name}"}

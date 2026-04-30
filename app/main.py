@@ -119,7 +119,14 @@ async def lifespan(app: FastAPI):
             return None
 
     _state.graph = _safe("graph", lambda: GraphClient(_state.settings))
-    _state.embedders = _safe("embedders", lambda: build_embedders(_state.settings)) or {}
+
+    # Build embedders independently per provider so one failure doesn't kill
+    # the other.
+    embedder_errs: dict[str, str] = {}
+    _state.embedders = build_embedders(_state.settings, errors_out=embedder_errs)
+    for prov, err in embedder_errs.items():
+        _state.init_errors[prov] = err
+
     _state.pinecone = _safe("pinecone", lambda: PineconeStore(_state.settings))
 
     if _state.graph and _state.embedders and _state.pinecone:
