@@ -181,6 +181,20 @@ FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec("brand_owner", "Eier/firma", "Branding", "text",
               "Vises ved siden av produktnavnet."),
 
+    # ─── Chat (intern RAG) ───────────────────────────────────────────
+    FieldSpec("openai_chat_model", "OpenAI chat-modell", "Chat (intern RAG)", "enum",
+              "Modellen som svarer i OpenAI-panelet.",
+              options=("gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1")),
+    FieldSpec("gemini_chat_model", "Gemini chat-modell", "Chat (intern RAG)", "enum",
+              "Modellen som svarer i Gemini-panelet.",
+              options=("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash")),
+    FieldSpec("chat_top_k", "Antall treff per spørsmål", "Chat (intern RAG)", "number",
+              "Hvor mange Pinecone-vektorer hentes som kontekst. 8 er en god default."),
+    FieldSpec("chat_max_context_chars", "Maks tegn kontekst", "Chat (intern RAG)", "number",
+              "Begrenser total kontekst-størrelse for å unngå token-overflow."),
+    FieldSpec("chat_system_prompt", "System-instruksjon", "Chat (intern RAG)", "textarea",
+              "Sendes til LLM-en før kontekst og spørsmål. {brand_owner} byttes ut automatisk."),
+
     # ─── MCP-server ──────────────────────────────────────────────────
     FieldSpec("mcp_enabled", "MCP-server aktivert", "MCP (eksterne LLM-er)", "bool",
               "Slå av for å skru av /mcp-endepunktet helt.",

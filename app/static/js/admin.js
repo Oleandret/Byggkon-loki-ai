@@ -19,6 +19,7 @@
       if (target === "progress") loadProgress();
       if (target === "folders") loadFoldersTab();
       if (target === "mcp") loadMcpTab();
+      if (target === "chat") loadChatTab();
     });
   });
 
@@ -1110,6 +1111,122 @@
       .catch(() => {
         target.textContent = "Kunne ikke kopiere";
       });
+  });
+
+  // ─── Chat (RAG, two panels) ──────────────────────────────────────
+  const _chatHistory = { openai: [], gemini: [] };
+
+  async function loadChatTab() {
+    // Pick up current model names from settings.
+    try {
+      const r = await api("GET", "/api/settings");
+      const eff = r.effective || {};
+      document.getElementById("chat-model-openai").textContent =
+        eff.openai_chat_model || "gpt-4o-mini";
+      document.getElementById("chat-model-gemini").textContent =
+        eff.gemini_chat_model || "gemini-2.5-flash";
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function renderChatMessages(provider) {
+    const el = document.getElementById(`chat-messages-${provider}`);
+    if (!_chatHistory[provider].length) {
+      el.innerHTML = `<p class="muted small">Skriv et spørsmål nedenfor for å starte.</p>`;
+      return;
+    }
+    el.innerHTML = _chatHistory[provider]
+      .map((m) => renderMessage(m))
+      .join("");
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function renderMessage(m) {
+    const cls = m.role === "user" ? "chat-msg user" : "chat-msg assistant";
+    const body = m.error
+      ? `<div class="chat-error">⚠ ${escapeHtml(m.error)}</div>`
+      : `<div class="chat-body">${escapeHtml(m.content || "").replace(/\n/g, "<br>")}</div>`;
+    const cites = (m.citations && m.citations.length)
+      ? `<div class="chat-citations">${m.citations
+          .map((c) => `
+            <a href="${escapeHtml(c.web_url || '#')}" target="_blank" rel="noopener" class="chat-cite">
+              <span class="chat-cite-num">[${c.n}]</span>
+              <span class="chat-cite-name">${escapeHtml(c.file_name)}</span>
+              ${c.page_number ? `<span class="muted small">s. ${c.page_number}</span>` : ""}
+              <span class="muted small">${(c.score * 100).toFixed(0)}%</span>
+            </a>`)
+          .join("")}</div>`
+      : "";
+    const loading = m.loading ? `<div class="chat-loading">Tenker…</div>` : "";
+    return `<div class="${cls}">${body}${loading}${cites}</div>`;
+  }
+
+  async function sendChat(provider, query) {
+    if (!query.trim()) return;
+    const hist = _chatHistory[provider];
+    hist.push({ role: "user", content: query });
+    const placeholder = { role: "assistant", content: "", loading: true };
+    hist.push(placeholder);
+    renderChatMessages(provider);
+
+    try {
+      const messages = hist
+        .filter((m) => !m.loading && m.content !== undefined)
+        .map((m) => ({ role: m.role, content: m.content || "" }));
+      const r = await api("POST", "/api/chat", { provider, messages });
+
+      // Replace placeholder with the actual response.
+      hist[hist.length - 1] = {
+        role: "assistant",
+        content: r.answer,
+        citations: r.citations,
+        error: r.error,
+      };
+    } catch (e) {
+      hist[hist.length - 1] = {
+        role: "assistant",
+        content: "",
+        error: e.message,
+      };
+    }
+    renderChatMessages(provider);
+  }
+
+  ["openai", "gemini"].forEach((provider) => {
+    const form = document.querySelector(`[data-chat-form="${provider}"]`);
+    const input = document.querySelector(`[data-chat-input="${provider}"]`);
+    form?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = input.value.trim();
+      if (!q) return;
+      input.value = "";
+      sendChat(provider, q);
+    });
+    // Cmd/Ctrl + Enter to send
+    input?.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+  });
+
+  document.getElementById("chat-broadcast-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = document.getElementById("chat-broadcast-input");
+    const q = input.value.trim();
+    if (!q) return;
+    input.value = "";
+    sendChat("openai", q);
+    sendChat("gemini", q);
+  });
+
+  document.getElementById("chat-clear-btn")?.addEventListener("click", () => {
+    _chatHistory.openai = [];
+    _chatHistory.gemini = [];
+    renderChatMessages("openai");
+    renderChatMessages("gemini");
   });
 
   // ─── Init ─────────────────────────────────────────────────────────

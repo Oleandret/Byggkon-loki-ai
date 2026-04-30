@@ -335,6 +335,56 @@ async def api_progress() -> dict:
     }
 
 
+@api.post("/chat")
+async def api_chat(payload: dict) -> dict:
+    """RAG chat endpoint. Body:
+        {
+          "provider": "openai" | "gemini",
+          "messages": [{"role": "user|assistant", "content": "..."}, ...]
+        }
+    The last message must be the user's new turn.
+    Returns: { answer, citations: [...], error?: str }
+    """
+    from .chat import answer as chat_answer
+    provider = (payload.get("provider") or "").lower().strip()
+    messages = payload.get("messages") or []
+    if provider not in ("openai", "gemini"):
+        raise HTTPException(400, "provider must be 'openai' or 'gemini'")
+    if not messages or messages[-1].get("role") != "user":
+        raise HTTPException(400, "messages must end with a user message")
+    query = messages[-1].get("content") or ""
+    history = messages[:-1]
+    if not query.strip():
+        raise HTTPException(400, "user message is empty")
+
+    res = await chat_answer(
+        provider=provider,
+        query=query,
+        history=history,
+        settings=_app_state.settings,
+        embedders=getattr(_app_state, "embedders", {}) or {},
+        pinecone=_app_state.pinecone,
+    )
+    return {
+        "provider": res.provider,
+        "answer": res.answer,
+        "error": res.error,
+        "citations": [
+            {
+                "n": c.n,
+                "file_name": c.file_name,
+                "file_path": c.file_path,
+                "web_url": c.web_url,
+                "drive_owner": c.drive_owner,
+                "page_number": c.page_number,
+                "score": c.score,
+                "snippet": c.snippet,
+            }
+            for c in res.citations
+        ],
+    }
+
+
 @api.post("/sync/stop")
 async def api_stop_sync() -> dict:
     """Request a graceful stop of the running sync."""

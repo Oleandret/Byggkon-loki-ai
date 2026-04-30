@@ -126,6 +126,19 @@ class Settings(BaseSettings):
     mcp_default_top_k: int = 10
     mcp_default_provider: str = "openai"  # which Pinecone index to search
 
+    # ─── In-app RAG chat ─────────────────────────────────────────────
+    openai_chat_model: str = "gpt-4o-mini"
+    gemini_chat_model: str = "gemini-2.5-flash"
+    chat_top_k: int = 8
+    chat_max_context_chars: int = 12000  # cap retrieved context per turn
+    chat_system_prompt: str = (
+        "Du er en AI-assistent for {brand_owner} som svarer på spørsmål "
+        "basert på interne dokumenter. Bruk konteksten under for å gi "
+        "presise, faktabaserte svar. Hvis svaret ikke finnes i konteksten, "
+        "si tydelig at du ikke vet det. Siter alltid kildene dine med [1], "
+        "[2] osv. som matcher kildene i konteksten."
+    )
+
     @field_validator("sync_users", "sync_drive_ids", mode="before")
     @classmethod
     def _strip(cls, v: object) -> str:

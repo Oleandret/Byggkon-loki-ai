@@ -10,6 +10,7 @@
 
       <nav class="admin-nav">
         <button data-tab="dashboard" class="admin-tab is-active">Oversikt</button>
+        <button data-tab="chat" class="admin-tab">Chat</button>
         <button data-tab="progress" class="admin-tab">Fremdrift</button>
         <button data-tab="folders" class="admin-tab">Mapper</button>
         <button data-tab="health" class="admin-tab">Systemstatus</button>
@@ -77,6 +78,75 @@
           <li>Se <em>Kjøringer</em> for historikk og feilmeldinger.</li>
         </ul>
       </div>
+    </section>
+
+    <!-- ─── Tab: Chat ──────────────────────────────────── -->
+    <section class="tab-pane" data-tab-pane="chat">
+      <header class="pane-head">
+        <p class="eyebrow">Spør i kunnskapsbasen</p>
+        <h1 class="heading-xl">Chat</h1>
+        <p class="muted">
+          To paneler, én per modell og indeks. Still samme spørsmål til
+          begge for å sammenligne svar og kilder.
+        </p>
+        <div class="chat-toolbar">
+          <button id="chat-clear-btn" class="btn btn-ghost">Nullstill begge</button>
+          <span class="muted small">Kontekst hentes fra Pinecone hver tur — ingen historikk lagres på server.</span>
+        </div>
+      </header>
+
+      <div class="chat-grid">
+        <!-- ─── OpenAI panel ─── -->
+        <div class="chat-panel" data-chat-panel="openai">
+          <div class="chat-panel-head">
+            <span class="chat-dot openai"></span>
+            <h3>OpenAI</h3>
+            <span class="muted small chat-model-tag" id="chat-model-openai">—</span>
+          </div>
+          <div class="chat-messages" id="chat-messages-openai">
+            <p class="muted small">Skriv et spørsmål nedenfor for å starte.</p>
+          </div>
+          <form class="chat-form" data-chat-form="openai">
+            <textarea
+              data-chat-input="openai"
+              class="input chat-input"
+              placeholder="Spør OpenAI…"
+              rows="2"
+            ></textarea>
+            <button type="submit" class="btn btn-primary chat-send-btn">Send</button>
+          </form>
+        </div>
+
+        <!-- ─── Gemini panel ─── -->
+        <div class="chat-panel" data-chat-panel="gemini">
+          <div class="chat-panel-head">
+            <span class="chat-dot gemini"></span>
+            <h3>Gemini</h3>
+            <span class="muted small chat-model-tag" id="chat-model-gemini">—</span>
+          </div>
+          <div class="chat-messages" id="chat-messages-gemini">
+            <p class="muted small">Skriv et spørsmål nedenfor for å starte.</p>
+          </div>
+          <form class="chat-form" data-chat-form="gemini">
+            <textarea
+              data-chat-input="gemini"
+              class="input chat-input"
+              placeholder="Spør Gemini…"
+              rows="2"
+            ></textarea>
+            <button type="submit" class="btn btn-primary chat-send-btn">Send</button>
+          </form>
+        </div>
+      </div>
+
+      <details class="chat-broadcast">
+        <summary>Send samme spørsmål til begge</summary>
+        <form id="chat-broadcast-form" class="chat-form" style="margin-top: 12px;">
+          <textarea id="chat-broadcast-input" class="input chat-input" rows="2"
+            placeholder="Skriv én gang, send til både OpenAI og Gemini…"></textarea>
+          <button type="submit" class="btn btn-primary">Send til begge</button>
+        </form>
+      </details>
     </section>
 
     <!-- ─── Tab: Progress ──────────────────────────────── -->
