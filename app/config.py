@@ -148,6 +148,11 @@ class Settings(BaseSettings):
             return ["openai", "gemini"]
         return [self.embedding_provider.value]
 
+    @property
+    def graph_authority_url(self) -> str:
+        """Full Microsoft Entra authority URL: '<authority>/<tenant_id>'."""
+        return f"{self.graph_authority}/{self.graph_tenant_id}"
+
     def include_paths_list(self) -> list[str]:
         """Parsed list of path prefixes to include, normalised to lower-case."""
         out: list[str] = []
@@ -191,10 +196,6 @@ def _normalise_path(p: str) -> str:
     if not s.startswith("/"):
         s = "/" + s
     return s
-
-    @property
-    def graph_authority_url(self) -> str:
-        return f"{self.graph_authority}/{self.graph_tenant_id}"
 
 
 _settings: Optional[Settings] = None
