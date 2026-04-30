@@ -16,6 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
         git \
+        autoconf \
+        libtool \
+        pkg-config \
+        wget \
+        xz-utils \
+        libpcre2-dev \
         libgl1 \
         libglib2.0-0 \
         libmagic1 \
@@ -26,9 +32,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr-eng \
         tesseract-ocr-nor \
         libreoffice \
-        libredwg-tools \
         pandoc \
     && rm -rf /var/lib/apt/lists/*
+
+# ─── Build libredwg from source for DWG (AutoCAD) support ────────────
+# libredwg isn't packaged with CLI tools in Debian Bookworm, so we compile
+# it from upstream. Provides `dwg2dxf` used by app/dwg_parser.py.
+WORKDIR /tmp/libredwg
+RUN wget -q https://ftp.gnu.org/gnu/libredwg/libredwg-0.13.3.tar.xz \
+    && tar xf libredwg-0.13.3.tar.xz \
+    && cd libredwg-0.13.3 \
+    && ./configure --disable-bindings --disable-trace --prefix=/usr/local \
+    && make -j"$(nproc)" \
+    && make install \
+    && cd /tmp \
+    && rm -rf /tmp/libredwg \
+    && ldconfig
 
 WORKDIR /app
 COPY requirements.txt ./
@@ -52,6 +71,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libmagic1 \
         libxml2 \
         libxslt1.1 \
+        libpcre2-8-0 \
         poppler-utils \
         tesseract-ocr \
         tesseract-ocr-eng \
@@ -60,6 +80,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pandoc \
         curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy libredwg (built from source in builder stage) — provides dwg2dxf CLI
+# used by app/dwg_parser.py to convert DWG → DXF before parsing with ezdxf.
+COPY --from=builder /usr/local/bin/dwg2dxf /usr/local/bin/dwg2dxf
+COPY --from=builder /usr/local/bin/dwgread /usr/local/bin/dwgread
+COPY --from=builder /usr/local/lib/libredwg* /usr/local/lib/
+RUN ldconfig
 
 # Copy the prepared venv from builder
 COPY --from=builder /opt/venv /opt/venv
