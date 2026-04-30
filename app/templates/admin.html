@@ -21,7 +21,18 @@
 
       <div class="admin-sidebar-actions">
         <button id="run-sync-btn" class="btn btn-primary btn-block">Kjør synkronisering nå</button>
+        <button id="stop-sync-btn" class="btn btn-secondary btn-block btn-danger" style="display: none;">
+          Stopp synkronisering
+        </button>
         <p class="muted small" id="run-sync-status">Klikk for å trigge en runde umiddelbart.</p>
+
+        <hr class="sidebar-divider" />
+        <button id="restart-btn" class="btn btn-ghost btn-block btn-danger-ghost">
+          ↻ Restart container
+        </button>
+        <p class="muted small">
+          Stopper appen og lar Railway redeploye. Tar 30–60 s.
+        </p>
       </div>
     </div>
   </aside>

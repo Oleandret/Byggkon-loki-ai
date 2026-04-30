@@ -51,7 +51,28 @@ class SyncOrchestrator:
         self._processor = Processor(settings, graph, embedders, pinecone, state)
         self._semaphore = asyncio.Semaphore(settings.process_concurrency)
         self._running = False
+        self._stop_requested = False
         self._lock = asyncio.Lock()
+
+    def request_stop(self) -> bool:
+        """Request graceful stop of the current run.
+
+        Returns True if a run was active and the stop flag was set, False
+        if no run was in progress.
+        """
+        if not self._running:
+            return False
+        self._stop_requested = True
+        log.info("sync.stop.requested")
+        return True
+
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    @property
+    def stop_requested(self) -> bool:
+        return self._stop_requested
 
     async def run_sync(self) -> RunStats:
         async with self._lock:
@@ -59,10 +80,12 @@ class SyncOrchestrator:
                 log.info("sync.skip.already_running")
                 return RunStats()
             self._running = True
+            self._stop_requested = False
         try:
             return await self._run_inner()
         finally:
             self._running = False
+            self._stop_requested = False
 
     async def _run_inner(self) -> RunStats:
         stats = RunStats()
@@ -105,6 +128,13 @@ class SyncOrchestrator:
                 )
 
             for drive in drives:
+                if self._stop_requested:
+                    log.info("sync.stop.honoured", drives_remaining=len(drives) - stats.drives_scanned)
+                    self._state.record_event(
+                        run_id=run_id, level="warn", event="run.stopped",
+                        message=f"Stoppet av bruker. Hoppet over {len(drives) - stats.drives_scanned} drives.",
+                    )
+                    break
                 stats.drives_scanned += 1
                 try:
                     await self._sync_drive(drive, stats)
@@ -197,6 +227,12 @@ class SyncOrchestrator:
                 async for item, link in self._graph.iter_drive_delta(
                     drive.drive_id, delta_link=delta_link
                 ):
+                    if self._stop_requested:
+                        log.info(
+                            "sync.drive.stop.honoured",
+                            drive=drive.owner_label,
+                        )
+                        break
                     if link:
                         new_delta_link = link
                     if item.get("__deltaLinkOnly__"):
@@ -239,7 +275,7 @@ class SyncOrchestrator:
                 if not t.done():
                     t.cancel()
 
-        if new_delta_link:
+        if new_delta_link and not self._stop_requested:
             self._state.set_delta_link(
                 drive.drive_id, new_delta_link, drive.as_metadata()
             )
@@ -250,6 +286,15 @@ class SyncOrchestrator:
                 run_id=getattr(self, "_run_id", None), level="info", event="drive.done",
                 drive_id=drive.drive_id, drive_label=drive.owner_label,
                 message="Drive ferdig · delta-checkpoint lagret",
+            )
+        elif self._stop_requested:
+            # Don't advance the deltaLink mid-stop — next run will replay any
+            # items we didn't get through.
+            log.info("sync.drive.stop.no_checkpoint", drive=drive.owner_label)
+            self._state.record_event(
+                run_id=getattr(self, "_run_id", None), level="warn", event="drive.stopped",
+                drive_id=drive.drive_id, drive_label=drive.owner_label,
+                message="Drive avbrutt — delta-checkpoint ikke lagret, neste runde gjenopptar",
             )
         else:
             log.warning(

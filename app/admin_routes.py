@@ -335,6 +335,53 @@ async def api_progress() -> dict:
     }
 
 
+@api.post("/sync/stop")
+async def api_stop_sync() -> dict:
+    """Request a graceful stop of the running sync."""
+    orch = getattr(_app_state, "orchestrator", None)
+    if orch is None:
+        return {"status": "noop", "reason": "Ingen orchestrator konfigurert"}
+    if not orch.is_running:
+        return {"status": "noop", "reason": "Ingen synkronisering pågår"}
+    if orch.stop_requested:
+        return {"status": "already_stopping", "reason": "Stop allerede forespurt — venter på pågående filer"}
+    orch.request_stop()
+    return {
+        "status": "stopping",
+        "reason": "Stoppsignal mottatt. Venter på pågående filer (kan ta noen sekunder).",
+    }
+
+
+@api.post("/restart")
+async def api_restart_app() -> dict:
+    """Trigger a graceful container restart by sending SIGTERM to ourselves.
+
+    On Railway this causes the container to exit; the platform's restart
+    policy (`restartPolicyType: ON_FAILURE`) brings it back up automatically.
+    """
+    import asyncio as _asyncio
+    import os as _os
+    import signal as _signal
+
+    log.warning("admin.restart.requested")
+
+    async def _kill_soon() -> None:
+        # Give the HTTP response a moment to flush back to the client.
+        await _asyncio.sleep(0.5)
+        log.warning("admin.restart.shutdown_now")
+        try:
+            _os.kill(_os.getpid(), _signal.SIGTERM)
+        except Exception:  # noqa: BLE001
+            # Fall back to a hard exit.
+            _os._exit(0)
+
+    _asyncio.create_task(_kill_soon())
+    return {
+        "status": "restarting",
+        "message": "Container stenger ned. Railway restarter automatisk innen 30–60 sekunder.",
+    }
+
+
 @api.post("/sync")
 async def api_trigger_sync() -> dict:
     """Trigger a sync run. Self-heals: if orchestrator was None at boot but

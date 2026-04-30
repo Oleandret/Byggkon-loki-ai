@@ -116,6 +116,18 @@ code { background: var(--obsidian-soft); padding: 1px 6px; border-radius: 4px; }
 .btn-on-dark:hover { background: rgba(255,255,255,0.08); }
 .btn-lg { padding: 14px 22px; font-size: 15px; border-radius: 12px; }
 .btn-block { width: 100%; }
+.btn-danger {
+  background: var(--white); color: #b03030; border-color: #f3c8c8;
+}
+.btn-danger:hover { background: var(--rose-dim); border-color: #b03030; }
+.btn-danger-ghost {
+  color: #b03030; padding: 8px 14px; font-size: 13px;
+}
+.btn-danger-ghost:hover { background: var(--rose-dim); }
+.sidebar-divider {
+  border: 0; border-top: 1px solid var(--obsidian-dim);
+  margin: 16px 0 10px;
+}
 
 /* ─── Hero ───────────────────────────────────────────────────────── */
 .hero {

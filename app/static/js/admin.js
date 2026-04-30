@@ -553,6 +553,75 @@
     });
   });
 
+  // ─── Stop sync ────────────────────────────────────────────────────
+  $("#stop-sync-btn")?.addEventListener("click", async () => {
+    const btn = $("#stop-sync-btn");
+    const status = $("#run-sync-status");
+    if (!confirm("Stoppe pågående synkronisering?\n\nFiler som er midt i prosessering blir fullført, men ingen nye blir startet. Delta-checkpoint blir IKKE lagret for drives som avbrytes — neste runde gjenopptar fra forrige punkt.")) {
+      return;
+    }
+    btn.disabled = true;
+    status.style.color = "#b07a14";
+    status.textContent = "Stopper…";
+    try {
+      const r = await api("POST", "/api/sync/stop");
+      if (r.status === "stopping" || r.status === "already_stopping") {
+        status.textContent = r.reason || "Stoppsignal sendt.";
+      } else {
+        status.style.color = "";
+        status.textContent = r.reason || JSON.stringify(r);
+      }
+    } catch (e) {
+      status.style.color = "#b03030";
+      status.textContent = `Feil: ${e.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ─── Restart container ────────────────────────────────────────────
+  $("#restart-btn")?.addEventListener("click", async () => {
+    if (!confirm("Restart hele applikasjonen?\n\nContaineren stenger ned og Railway starter den automatisk innen 30–60 sekunder. Du blir logget ut og må logge inn på nytt.\n\nFortsett?")) {
+      return;
+    }
+    const btn = $("#restart-btn");
+    const status = $("#run-sync-status");
+    btn.disabled = true;
+    status.style.color = "#b07a14";
+    status.textContent = "Stenger ned…";
+    try {
+      const r = await api("POST", "/api/restart");
+      status.textContent = r.message || "Restart trigget. Venter på Railway…";
+      // Auto-redirect to login after a delay so the user sees the new container.
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 45000);
+    } catch (e) {
+      // The request might fail mid-flight because the server shut down — that's actually expected/OK.
+      status.textContent = "Containeren stenger ned. Venter på Railway-redeploy…";
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 45000);
+    }
+  });
+
+  // Toggle stop button visibility based on whether a run is active.
+  async function updateSyncControls() {
+    try {
+      const p = await api("GET", "/api/progress");
+      const active = (p.summary && p.summary.drives_active > 0) ||
+                     (p.last_run && !p.last_run.finished_at);
+      const stopBtn = $("#stop-sync-btn");
+      const runBtn = $("#run-sync-btn");
+      if (stopBtn) stopBtn.style.display = active ? "" : "none";
+      if (runBtn) runBtn.disabled = !!active;
+    } catch (e) {
+      // ignore — auth or transient
+    }
+  }
+  setInterval(updateSyncControls, 5000);
+  updateSyncControls();
+
   // ─── Run sync now ─────────────────────────────────────────────────
   $("#run-sync-btn")?.addEventListener("click", async () => {
     const status = $("#run-sync-status");
