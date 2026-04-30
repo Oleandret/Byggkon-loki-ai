@@ -156,13 +156,51 @@ async def api_patch_settings(payload: dict) -> dict:
     # Rebuild the live Settings instance so non-restart fields take effect now.
     _app_state.settings = _app_state.settings_store.effective_settings()
 
+    # Hot-reload downstream clients whose credentials/config touched here.
+    # No process restart needed — the new clients pick up the new Settings.
+    rebuilt: list[str] = []
+    touched = set(updates.keys())
+
+    if touched & {"openai_api_key", "openai_embedding_model",
+                  "gemini_api_key", "gemini_embedding_model",
+                  "gemini_embed_images", "embedding_provider",
+                  "embedding_batch_size"}:
+        try:
+            from .embeddings import build_embedders
+            _app_state.embedders = build_embedders(_app_state.settings) or {}
+            rebuilt.append("embedders")
+        except Exception as e:  # noqa: BLE001
+            log.warning("admin.rebuild.embedders.error", err=str(e))
+
+    if touched & {"pinecone_namespace"}:
+        # Index credentials and names are flagged as requires_restart; only
+        # the namespace can change live (it's used per-call).
+        rebuilt.append("pinecone (namespace only)")
+
+    # Rebuild the orchestrator if any client changed and we have the full set.
+    if rebuilt and getattr(_app_state, "graph", None) and \
+            getattr(_app_state, "pinecone", None) and _app_state.embedders:
+        from .sync import SyncOrchestrator
+        _app_state.orchestrator = SyncOrchestrator(
+            _app_state.settings,
+            _app_state.graph,
+            _app_state.embedders,
+            _app_state.pinecone,
+            _app_state.state,
+        )
+        rebuilt.append("orchestrator")
+
     # Reschedule the sync job if interval/cron changed.
     try:
         _app_state.scheduler_reschedule()
     except Exception as e:  # noqa: BLE001
         log.warning("admin.scheduler.reschedule.error", err=str(e))
 
-    return {"ok": True, "restart_required_for": restart_keys}
+    return {
+        "ok": True,
+        "restart_required_for": restart_keys,
+        "hot_reloaded": rebuilt,
+    }
 
 
 @api.get("/stats")
