@@ -30,6 +30,8 @@ _FAST_OK_EXT = {
     ".odt", ".ods", ".odp",
     ".epub",
 }
+# CAD files — handled by dwg_parser.py (libredwg + ezdxf), not Unstructured.
+_CAD_EXT = {".dwg", ".dxf"}
 
 
 @dataclass
@@ -63,7 +65,11 @@ def _pick_strategy(file_path: str, configured: UnstructuredStrategy) -> str:
 
 def is_supported_extension(file_name: str) -> bool:
     ext = os.path.splitext(file_name)[1].lower()
-    return ext in _HI_RES_EXT or ext in _FAST_OK_EXT
+    return ext in _HI_RES_EXT or ext in _FAST_OK_EXT or ext in _CAD_EXT
+
+
+def is_cad_extension(file_name: str) -> bool:
+    return os.path.splitext(file_name)[1].lower() in _CAD_EXT
 
 
 def partition_and_chunk(
@@ -85,6 +91,11 @@ def partition_and_chunk(
     if not is_supported_extension(file_path):
         log.info("unstructured.skip.unsupported", file=os.path.basename(file_path))
         return ParseResult()
+
+    # ─── DWG/DXF — CAD files use a separate parser (libredwg + ezdxf) ──
+    if is_cad_extension(file_path):
+        from .dwg_parser import parse_dwg_or_dxf
+        return parse_dwg_or_dxf(file_path, extract_image=extract_images)
 
     strategy = _pick_strategy(file_path, settings.unstructured_strategy)
     log.info(

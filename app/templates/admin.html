@@ -441,6 +441,97 @@
 
     <!-- ─── Tab: Runs ──────────────────────────────────── -->
     <section class="tab-pane" data-tab-pane="runs">
+      <!-- Live pipeline flow diagram (pulses when sync is active) -->
+      <div id="pipeline-flow" class="pipeline-wrap" data-state="idle">
+        <svg class="pipeline-svg" viewBox="0 0 1200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <linearGradient id="pipeLine" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stop-color="#03021300"/>
+              <stop offset="50%" stop-color="#1e8b6f"/>
+              <stop offset="100%" stop-color="#03021300"/>
+            </linearGradient>
+            <radialGradient id="pipeNode" cx="50%" cy="40%" r="60%">
+              <stop offset="0%" stop-color="#ffffff"/>
+              <stop offset="100%" stop-color="#f1f3f6"/>
+            </radialGradient>
+            <filter id="pipeGlow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="6" result="blur"/>
+              <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+
+            <path id="pipe-1-2" d="M 150 100 Q 230 100, 310 100"/>
+            <path id="pipe-2-3" d="M 410 100 Q 490 100, 570 100"/>
+            <path id="pipe-3-4" d="M 670 100 Q 750 100, 830 100"/>
+            <path id="pipe-4-5" d="M 930 100 Q 1010 100, 1090 100"/>
+          </defs>
+
+          <!-- Connection lines -->
+          <use href="#pipe-1-2" stroke="url(#pipeLine)" stroke-width="2" fill="none"/>
+          <use href="#pipe-2-3" stroke="url(#pipeLine)" stroke-width="2" fill="none"/>
+          <use href="#pipe-3-4" stroke="url(#pipeLine)" stroke-width="2" fill="none"/>
+          <use href="#pipe-4-5" stroke="url(#pipeLine)" stroke-width="2" fill="none"/>
+
+          <!-- Animated dots -->
+          <g class="pipe-dots">
+            <circle r="5" fill="#1e8b6f"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#pipe-1-2"/></animateMotion></circle>
+            <circle r="5" fill="#1e8b6f" opacity="0.7"><animateMotion dur="2.4s" begin="1.2s" repeatCount="indefinite"><mpath href="#pipe-1-2"/></animateMotion></circle>
+            <circle r="5" fill="#1e8b6f"><animateMotion dur="2.4s" begin="0.4s" repeatCount="indefinite"><mpath href="#pipe-2-3"/></animateMotion></circle>
+            <circle r="5" fill="#1e8b6f" opacity="0.7"><animateMotion dur="2.4s" begin="1.6s" repeatCount="indefinite"><mpath href="#pipe-2-3"/></animateMotion></circle>
+            <circle r="5" fill="#1e8b6f"><animateMotion dur="2.4s" begin="0.8s" repeatCount="indefinite"><mpath href="#pipe-3-4"/></animateMotion></circle>
+            <circle r="5" fill="#1e8b6f" opacity="0.7"><animateMotion dur="2.4s" begin="2.0s" repeatCount="indefinite"><mpath href="#pipe-3-4"/></animateMotion></circle>
+            <circle r="5" fill="#1e8b6f"><animateMotion dur="2.4s" begin="1.2s" repeatCount="indefinite"><mpath href="#pipe-4-5"/></animateMotion></circle>
+            <circle r="5" fill="#1e8b6f" opacity="0.7"><animateMotion dur="2.4s" begin="2.4s" repeatCount="indefinite"><mpath href="#pipe-4-5"/></animateMotion></circle>
+          </g>
+
+          <!-- Node 1: Graph -->
+          <g class="pipe-node" data-stage="graph">
+            <circle cx="100" cy="100" r="48" fill="url(#pipeNode)" stroke="#0302131a" stroke-width="1"/>
+            <g class="pipe-pulse"><circle cx="100" cy="100" r="48" fill="none" stroke="#1e8b6f" stroke-width="2"/></g>
+            <text x="100" y="98" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#030213">GRAPH</text>
+            <text x="100" y="113" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" fill="#6b7280" class="pipe-counter" data-counter="graph">—</text>
+          </g>
+
+          <!-- Node 2: Parse -->
+          <g class="pipe-node" data-stage="parse">
+            <circle cx="360" cy="100" r="48" fill="url(#pipeNode)" stroke="#0302131a" stroke-width="1"/>
+            <g class="pipe-pulse"><circle cx="360" cy="100" r="48" fill="none" stroke="#1e8b6f" stroke-width="2"/></g>
+            <text x="360" y="98" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#030213">PARSE</text>
+            <text x="360" y="113" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" fill="#6b7280" class="pipe-counter" data-counter="parse">—</text>
+          </g>
+
+          <!-- Node 3: Embed -->
+          <g class="pipe-node" data-stage="embed">
+            <circle cx="620" cy="100" r="48" fill="url(#pipeNode)" stroke="#0302131a" stroke-width="1"/>
+            <g class="pipe-pulse"><circle cx="620" cy="100" r="48" fill="none" stroke="#1e8b6f" stroke-width="2"/></g>
+            <text x="620" y="98" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#030213">EMBED</text>
+            <text x="620" y="113" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" fill="#6b7280" class="pipe-counter" data-counter="embed">—</text>
+          </g>
+
+          <!-- Node 4: Pinecone -->
+          <g class="pipe-node" data-stage="pinecone">
+            <circle cx="880" cy="100" r="48" fill="url(#pipeNode)" stroke="#0302131a" stroke-width="1"/>
+            <g class="pipe-pulse"><circle cx="880" cy="100" r="48" fill="none" stroke="#1e8b6f" stroke-width="2"/></g>
+            <text x="880" y="98" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#030213">PINECONE</text>
+            <text x="880" y="113" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" fill="#6b7280" class="pipe-counter" data-counter="pinecone">—</text>
+          </g>
+
+          <!-- Node 5: Done -->
+          <g class="pipe-node" data-stage="done">
+            <circle cx="1140" cy="100" r="48" fill="#030213" stroke="#0302131a" stroke-width="1"/>
+            <text x="1140" y="98" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#1e8b6f">SØKBART</text>
+            <text x="1140" y="113" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" fill="rgba(255,255,255,0.7)" class="pipe-counter" data-counter="done">—</text>
+          </g>
+        </svg>
+
+        <div class="pipeline-status">
+          <span id="pipeline-state-label" class="pipeline-state">Inaktiv</span>
+          <span id="pipeline-current-file" class="muted small"></span>
+        </div>
+      </div>
+
       <header class="pane-head">
         <p class="eyebrow">Audit log</p>
         <h1 class="heading-xl">Kjøringer</h1>

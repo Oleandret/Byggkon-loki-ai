@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr-eng \
         tesseract-ocr-nor \
         libreoffice \
+        libredwg-tools \
         pandoc \
     && rm -rf /var/lib/apt/lists/*
 

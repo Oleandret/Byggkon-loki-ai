@@ -39,3 +39,8 @@ cryptography==44.0.0
 
 # Misc
 tqdm==4.67.1
+
+# DWG/DXF (AutoCAD) support — libredwg-tools at OS level converts .dwg → .dxf,
+# ezdxf parses .dxf for text + renders to PNG via matplotlib (already pulled
+# in by unstructured-inference).
+ezdxf==1.3.5

@@ -576,6 +576,59 @@ code { background: var(--obsidian-soft); padding: 1px 6px; border-radius: 4px; }
 .data-table .ok { color: var(--green); font-weight: 600; }
 .data-table .err { color: #b03030; font-weight: 600; }
 
+/* ─── Live pipeline visualisation (Kjøringer) ────────────────────── */
+.pipeline-wrap {
+  position: relative; margin: 0 0 28px;
+  padding: 22px 24px 16px;
+  background: linear-gradient(180deg, #ffffff 0%, var(--ghost) 100%);
+  border: 1px solid var(--obsidian-dim);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.pipeline-svg { width: 100%; height: auto; max-height: 200px; display: block; }
+.pipe-dots { opacity: 0.55; transition: opacity 0.4s ease; }
+.pipeline-wrap[data-state="active"] .pipe-dots { opacity: 1; }
+.pipeline-wrap[data-state="active"] .pipe-dots circle {
+  animation-duration: 1.2s !important;
+}
+
+/* Active-stage node glow */
+.pipe-node .pipe-pulse {
+  opacity: 0; transform-origin: center; transform-box: fill-box;
+}
+.pipe-node.is-active-stage .pipe-pulse {
+  opacity: 1; animation: pipe-pulse-anim 1.6s ease-in-out infinite;
+}
+@keyframes pipe-pulse-anim {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50%      { opacity: 0.05; transform: scale(1.15); }
+}
+.pipe-node.is-active-stage circle:first-child {
+  stroke: var(--green); stroke-width: 2;
+}
+
+.pipeline-status {
+  display: flex; align-items: center; gap: 14px;
+  margin-top: 8px; padding-top: 12px;
+  border-top: 1px solid var(--obsidian-dim);
+}
+.pipeline-state {
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.pipeline-state-active {
+  background: var(--green-dim); color: var(--green);
+  animation: pipe-pulse-anim 1.4s ease-in-out infinite;
+}
+.pipeline-state-idle {
+  background: var(--grey-100); color: var(--grey-700);
+}
+
+@media (max-width: 760px) {
+  .pipeline-wrap { padding: 14px 16px; }
+}
+
 /* ─── Runs tab — expandable rows + event log ─────────────────────── */
 .runs-controls {
   display: flex; gap: 16px; align-items: center; margin-bottom: 14px;

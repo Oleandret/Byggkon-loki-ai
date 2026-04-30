@@ -17,6 +17,7 @@
       <a href="#step-3">3. Pinecone</a>
       <a href="#step-4">4. Konfigurer {{ brand_name }}</a>
       <a href="#step-5">5. Verifiser</a>
+      <a href="#filetypes">Filtyper og DWG/CAD</a>
       <a href="#mcp">Koble til ekstern LLM (MCP)</a>
       <a href="#troubleshooting">Feilsøking</a>
     </div>
@@ -146,6 +147,72 @@
       <li>Sjekk <em>Kjøringer</em>-fanen for å se progresjon, indekserte filer og eventuelle feil.</li>
       <li>Verifiser i Pinecone-konsollet at indeksen får vektorer.</li>
     </ol>
+  </div>
+</section>
+
+<section id="filetypes" class="section">
+  <div class="max-width help-step">
+    <span class="step-tag">Filtyper</span>
+    <h2 class="heading-lg">Hvilke filtyper indekseres — inkludert AutoCAD</h2>
+    <p>
+      {{ brand_name }} håndterer 25+ filtyper. Her er kategoriseringen:
+    </p>
+
+    <h3 class="mt-l">Tekst og dokumenter (alltid)</h3>
+    <ul class="bullet">
+      <li><strong>Word</strong>: <code>.docx</code>, <code>.doc</code>, <code>.odt</code>, <code>.rtf</code></li>
+      <li><strong>Excel</strong>: <code>.xlsx</code>, <code>.xls</code>, <code>.ods</code>, <code>.csv</code>, <code>.tsv</code></li>
+      <li><strong>PowerPoint</strong>: <code>.pptx</code>, <code>.ppt</code>, <code>.odp</code></li>
+      <li><strong>Tekst og web</strong>: <code>.txt</code>, <code>.md</code>, <code>.html</code>, <code>.xml</code>, <code>.json</code>, <code>.epub</code></li>
+      <li><strong>E-post</strong>: <code>.eml</code>, <code>.msg</code> (Outlook)</li>
+    </ul>
+
+    <h3 class="mt-l">PDF med OCR og bilder</h3>
+    <p>
+      PDF parses med Unstructured i <code>hi_res</code>-modus: layout-deteksjon
+      identifiserer kolonner og tabeller, og scannet tekst leses med Tesseract
+      OCR (norsk + engelsk). Innebygde bilder kan også embeddes via Gemini
+      multimodal.
+    </p>
+    <ul class="bullet">
+      <li><strong>PDF</strong>: <code>.pdf</code></li>
+      <li><strong>Bilder</strong>: <code>.png</code>, <code>.jpg</code>, <code>.tiff</code>, <code>.bmp</code></li>
+    </ul>
+
+    <h3 class="mt-l">AutoCAD DWG og DXF</h3>
+    <div class="callout">
+      <strong>Egenutviklet CAD-pipeline</strong> for {{ brand_owner }}s tegningsarkiv:
+      <ol class="ordered-steps" style="margin-top: 8px;">
+        <li>DWG (binær) konverteres til DXF (tekst) med <code>libredwg-tools</code> — installert i container.</li>
+        <li>DXF parses med <code>ezdxf</code> som henter ut:
+          <ul class="bullet">
+            <li>Drawing properties (tittel, prosjekt, forfatter, dato)</li>
+            <li>Titteltabell-attributter (KUNDE, PROSJEKT, REV, DATO, SKALA)</li>
+            <li>Alle TEXT, MTEXT, ATTRIB og MULTILEADER-elementer</li>
+            <li>Lagnavn (gir bygningsdel-taksonomi: A-WALL, M-PIPE-...)</li>
+            <li>Blokk-navn (symbol-bruk i tegningen)</li>
+            <li>Dimensjoner (mål)</li>
+          </ul>
+        </li>
+        <li>Tegningen rendres til en PNG som <strong>Gemini multimodal kan se direkte</strong>
+          — du finner tegninger basert på visuelt utseende, ikke bare ord.</li>
+      </ol>
+    </div>
+
+    <h3 class="mt-l">Hva som ikke støttes (ennå)</h3>
+    <ul class="bullet">
+      <li>RVT (Revit) — proprietært binærformat, krever Revit selv eller Forge API</li>
+      <li>IFC (BIM) — kunne legges til; si fra hvis dette er viktig</li>
+      <li>Solidworks/Inventor 3D-modeller</li>
+      <li>Video-filer (men Gemini multimodal kan i prinsippet ta video-bilder)</li>
+    </ul>
+
+    <h3 class="mt-l">Filer som hoppes over</h3>
+    <p>
+      Filer over <code>MAX_FILE_BYTES</code> (default 50 MB) hoppes over — store
+      DWG-er kan trenge høyere grense. Også: filer som matcher
+      <code>SYNC_EXCLUDE_PATHS</code> i innstillingene.
+    </p>
   </div>
 </section>
 

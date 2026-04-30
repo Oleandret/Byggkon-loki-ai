@@ -295,8 +295,12 @@
             <path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/>
           </svg>
         </div>
-        <h3>Alle filtyper</h3>
-        <p>PDF, Word, PowerPoint, Excel, bilder, e-post, HTML, Markdown og mer — over 25 formater.</p>
+        <h3>Alle filtyper — også DWG</h3>
+        <p>
+          PDF, Word, PowerPoint, Excel, bilder, e-post, HTML/Markdown og over 25 andre formater.
+          <strong>AutoCAD DWG og DXF</strong> indekseres med titteltabell, lagnavn, blokker
+          og alle tekst-annotasjoner — pluss visuell PNG-render for multimodal søk.
+        </p>
       </article>
 
       <article class="feature-card">
@@ -351,6 +355,77 @@
         </p>
       </article>
     </div>
+  </div>
+</section>
+
+<section class="section section-light">
+  <div class="max-width">
+    <p class="eyebrow">Bygget for byggebransjen</p>
+    <h2 class="heading-xl">CAD-tegninger, fotografier og dokumenter — alt i samme søk</h2>
+    <p class="lede-sm">
+      Byggkons faglige hverdag handler ikke bare om Word-dokumenter. {{ brand_name }}
+      møter dere der dere er — tekniske tegninger, fotografier fra befaring,
+      teknisk korrespondanse og kontrakter.
+    </p>
+
+    <div class="feature-grid">
+      <article class="feature-card">
+        <div class="feature-icon icon-mint">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M3 9h18"/><path d="M9 21V9"/><path d="M14 13l3 3-3 3"/>
+          </svg>
+        </div>
+        <h3>AutoCAD DWG &amp; DXF</h3>
+        <p>
+          DWG konverteres til DXF med libredwg, parses med ezdxf, og gir
+          deg <strong>titteltabell, prosjekt-metadata, lagnavn, blokk-symbol,
+          dimensjoner og alle tekst-annotasjoner</strong> som søkbart innhold.
+          Tegningen rendres også til PNG som Gemini kan se direkte —
+          så du kan finne tegninger basert på <em>visuelt likhet</em>, ikke bare
+          ord.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feature-icon icon-cream">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+          </svg>
+        </div>
+        <h3>To AI-modeller parallelt</h3>
+        <p>
+          Velg mellom <strong>OpenAI</strong> (GPT-5-serien) og
+          <strong>Google Gemini 3</strong> (multimodal — kan se bilder og
+          tegninger), eller kjør begge samtidig i to indekser. To chat-paneler
+          side om side i admin lar dere sammenligne svarene direkte.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feature-icon icon-rose">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+        </div>
+        <h3>Koble på alle LLM-er via MCP</h3>
+        <p>
+          {{ brand_name }} eksponerer kunnskapsbasen som en
+          <strong>Model Context Protocol-server</strong>. Claude Desktop, Cursor,
+          Continue og andre MCP-klienter får automatisk tilgang til verktøy
+          for å søke i Byggkons tegninger og dokumenter — uten å kopiere
+          data til skytjenester.
+        </p>
+      </article>
+    </div>
+
+    <p class="lede-sm" style="margin-top: 32px;">
+      <strong>Filtyper indeksert i denne versjonen:</strong>
+      PDF (med OCR for skannet tekst og innebygde bilder), Word/Excel/PowerPoint,
+      AutoCAD DWG og DXF, JPEG/PNG/TIFF, Outlook .msg, ren tekst, HTML, Markdown,
+      EPUB, OpenDocument og 15+ andre formater.
+    </p>
   </div>
 </section>
 

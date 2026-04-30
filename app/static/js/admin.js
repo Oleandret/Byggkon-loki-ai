@@ -242,6 +242,90 @@
   document.getElementById("runs-refresh-btn")?.addEventListener("click", loadRuns);
   document.getElementById("runs-only-active")?.addEventListener("change", loadRuns);
 
+  // ─── Live pipeline visualization ──────────────────────────────────
+  let _pipelineTimer = null;
+
+  async function updatePipeline() {
+    const wrap = document.getElementById("pipeline-flow");
+    if (!wrap) return;
+    try {
+      const p = await api("GET", "/api/progress");
+      const summary = p.summary || {};
+      const isActive =
+        (summary.drives_active || 0) > 0 ||
+        (p.last_run && !p.last_run.finished_at);
+
+      wrap.dataset.state = isActive ? "active" : "idle";
+
+      // Counters per stage
+      setCounter("graph", `${summary.drives_active || 0} aktive · ${summary.drives_done || 0} ferdig`);
+      setCounter("parse", `${summary.total_seen || 0} sett`);
+      setCounter("embed", `${summary.files_per_minute || 0}/min`);
+      setCounter("pinecone", `${(summary.total_processed || 0).toLocaleString("nb-NO")} chunks`);
+      setCounter("done", `${(p.vectors_total || 0).toLocaleString("nb-NO") || "0"} vektorer`);
+
+      // Active stage detection — light up the most recently active stage.
+      const activeDrive = (p.drives || []).find((d) => d.phase === "syncing");
+      const stateLabel = document.getElementById("pipeline-state-label");
+      const currentFile = document.getElementById("pipeline-current-file");
+      if (isActive) {
+        stateLabel.textContent = "Pågår";
+        stateLabel.className = "pipeline-state pipeline-state-active";
+        if (activeDrive && activeDrive.current_file) {
+          currentFile.textContent = `Behandler: ${activeDrive.current_file} · ${activeDrive.drive_label || ""}`;
+        } else {
+          currentFile.textContent = "Henter neste fil…";
+        }
+      } else {
+        stateLabel.textContent = p.next_run_at ? "Venter" : "Inaktiv";
+        stateLabel.className = "pipeline-state pipeline-state-idle";
+        if (p.next_run_at) {
+          const next = new Date(p.next_run_at * 1000);
+          currentFile.textContent = `Neste kjøring: ${next.toLocaleTimeString("nb-NO")}`;
+        } else {
+          currentFile.textContent = "";
+        }
+      }
+
+      // Highlight the most active node based on heuristic
+      const stages = ["graph", "parse", "embed", "pinecone", "done"];
+      let activeStage = null;
+      if (isActive) {
+        if ((summary.total_processed || 0) > 0) activeStage = "pinecone";
+        else if ((summary.total_seen || 0) > 0) activeStage = "parse";
+        else if ((summary.drives_active || 0) > 0) activeStage = "graph";
+        else activeStage = "graph";
+      }
+      stages.forEach((s) => {
+        const node = wrap.querySelector(`[data-stage="${s}"]`);
+        if (node) node.classList.toggle("is-active-stage", s === activeStage);
+      });
+    } catch (e) {
+      // Silently ignore
+    }
+  }
+
+  function setCounter(stage, text) {
+    const el = document.querySelector(`[data-counter="${stage}"]`);
+    if (el) el.textContent = text;
+  }
+
+  function maybeStartPipelineRefresh() {
+    const isOnRunsTab = document
+      .querySelector('[data-tab-pane="runs"]')
+      ?.classList.contains("is-active");
+    if (isOnRunsTab && !_pipelineTimer) {
+      _pipelineTimer = setInterval(updatePipeline, 3000);
+      updatePipeline();
+    } else if (!isOnRunsTab && _pipelineTimer) {
+      clearInterval(_pipelineTimer);
+      _pipelineTimer = null;
+    }
+  }
+  $$(".admin-tab").forEach((tab) =>
+    tab.addEventListener("click", () => setTimeout(maybeStartPipelineRefresh, 50))
+  );
+
   function truncate(s, n) {
     if (!s) return "";
     return s.length > n ? s.slice(0, n - 1) + "…" : s;
