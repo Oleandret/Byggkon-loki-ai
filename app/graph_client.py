@@ -247,12 +247,26 @@ class GraphClient:
 
     # ─── Drive helpers ────────────────────────────────────────────────
     async def get_user_drive(self, user_upn_or_id: str) -> Optional[dict[str, Any]]:
-        """Return the user's primary OneDrive (or None if they don't have one)."""
+        """Return the user's primary OneDrive (or None if they don't have one).
+
+        Skips users whose drive is unavailable for common, non-fatal reasons:
+          * 403 Forbidden          — app lacks Files.Read.All for this drive
+          * 404 Not Found          — user exists but has no OneDrive provisioned
+          * 410 Gone               — drive was deleted
+          * 423 Locked             — typically a terminated employee or
+                                     legal-hold lock; drive is "resourceLocked"
+          * 401 Unauthorized (rare on individual drives) — treat as skip too
+        Anything else still raises so it can be retried/surfaced.
+        """
         try:
             return await self.get_json(f"/users/{user_upn_or_id}/drive")
         except GraphError as e:
-            if e.status in (403, 404):
-                log.info("graph.user_drive.skip", user=user_upn_or_id, status=e.status)
+            if e.status in (401, 403, 404, 410, 423):
+                log.info(
+                    "graph.user_drive.skip",
+                    user=user_upn_or_id, status=e.status,
+                    reason="locked" if e.status == 423 else "inaccessible",
+                )
                 return None
             raise
 

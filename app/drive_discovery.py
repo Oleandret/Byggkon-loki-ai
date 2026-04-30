@@ -96,6 +96,7 @@ async def discover_drives(graph: GraphClient, settings: Settings) -> list[DriveR
     # all_users (+ optional sharepoint)
     log.info("discovery.users.start")
     user_count = 0
+    skipped_users = 0
     async for user in graph.iter_users():
         user_count += 1
         if user.get("accountEnabled") is False:
@@ -103,7 +104,14 @@ async def discover_drives(graph: GraphClient, settings: Settings) -> list[DriveR
         upn = user.get("userPrincipalName") or user.get("id")
         if not upn:
             continue
-        drv = await graph.get_user_drive(upn)
+        # Per-user try/except: a single locked/unreachable drive should
+        # never abort enumeration of the rest of the tenant.
+        try:
+            drv = await graph.get_user_drive(upn)
+        except Exception as e:  # noqa: BLE001
+            skipped_users += 1
+            log.warning("discovery.user_drive.error", user=upn, err=str(e))
+            continue
         if drv and drv.get("id") and drv["id"] not in seen_ids:
             seen_ids.add(drv["id"])
             drives.append(
@@ -113,7 +121,12 @@ async def discover_drives(graph: GraphClient, settings: Settings) -> list[DriveR
                     owner_label=upn,
                 )
             )
-    log.info("discovery.users.done", users_seen=user_count, drives=len(drives))
+    log.info(
+        "discovery.users.done",
+        users_seen=user_count,
+        drives=len(drives),
+        skipped_users=skipped_users,
+    )
 
     if scope == SyncScope.ALL_USERS_AND_SHAREPOINT:
         log.info("discovery.sharepoint.start")

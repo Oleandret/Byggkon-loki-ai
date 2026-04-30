@@ -81,7 +81,17 @@ class SyncOrchestrator:
                 run_id=run_id, level="info", event="discovery.start",
                 message="Henter drives fra Microsoft Graph…",
             )
-            drives = await discover_drives(self._graph, self._settings)
+            try:
+                drives = await discover_drives(self._graph, self._settings)
+            except Exception as e:  # noqa: BLE001
+                log.error("sync.discovery.error", err=str(e))
+                self._state.record_event(
+                    run_id=run_id, level="error", event="discovery.error",
+                    message=f"Discovery feilet: {e}",
+                )
+                stats.errors += 1
+                stats.error_samples.append(f"discovery: {e}")
+                drives = []
             log.info("sync.drives.discovered", count=len(drives))
             self._state.record_event(
                 run_id=run_id, level="info", event="discovery.done",
