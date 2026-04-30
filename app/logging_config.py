@@ -17,8 +17,22 @@ def configure_logging(level: str = "INFO") -> None:
         level=level_int,
     )
 
-    # Tone down noisy libraries.
-    for noisy in ("httpx", "httpcore", "msal", "urllib3"):
+    # Tone down noisy libraries — these flood stdout with per-page or
+    # per-image messages that drown out our structured event log.
+    noisy_loggers = (
+        "httpx", "httpcore", "msal", "urllib3",
+        # pdfminer.six prints "Reading PDF for file: ..." for every file
+        "pdfminer", "pdfminer.pdfparser", "pdfminer.pdfdocument",
+        "pdfminer.pdfpage", "pdfminer.pdfinterp", "pdfminer.cmapdb",
+        "pdfminer.converter", "pdfminer.layout",
+        # PIL/Pillow logs RGBA mode warnings during image extraction
+        "PIL", "PIL.PngImagePlugin", "PIL.TiffImagePlugin",
+        # Unstructured's per-element verbosity
+        "unstructured", "unstructured.partition", "unstructured_inference",
+        # Heavy ML libs
+        "transformers", "torch",
+    )
+    for noisy in noisy_loggers:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     structlog.configure(
