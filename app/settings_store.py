@@ -262,7 +262,20 @@ class SettingsStore:
             return ""
 
     # ─── CRUD ────────────────────────────────────────────────────────
-    def get_overrides(self, *, reveal_secrets: bool = False) -> dict[str, Any]:
+    def get_overrides(
+        self,
+        *,
+        reveal_secrets: bool = False,
+        skip_undecryptable: bool = False,
+    ) -> dict[str, Any]:
+        """Return overrides from SQLite.
+
+        When ``skip_undecryptable`` is True, secrets whose Fernet token
+        can't be decrypted (e.g. session secret rotated) are *omitted*
+        from the result rather than surfaced as empty strings — this
+        prevents them from clobbering valid env-var values during the
+        Settings merge.
+        """
         out: dict[str, Any] = {}
         with self._connect() as conn:
             for row in conn.execute("SELECT key, value, is_secret FROM app_settings"):
@@ -272,6 +285,18 @@ class SettingsStore:
                 value = json.loads(row["value"])
                 if row["is_secret"]:
                     plain = self._decrypt(value) if isinstance(value, str) else ""
+                    if not plain and value:
+                        # Stored token was non-empty, but decrypt yielded "".
+                        # Either the session secret rotated, or the token is
+                        # corrupt. Don't let this clobber the env var.
+                        if skip_undecryptable:
+                            log.warning(
+                                "settings.override.skip_undecryptable",
+                                key=row["key"],
+                                hint="Re-enter the value via /admin or ignore "
+                                     "if it's already set in env vars.",
+                            )
+                            continue
                     out[row["key"]] = plain if reveal_secrets else _mask(plain)
                 else:
                     out[row["key"]] = value
@@ -281,8 +306,33 @@ class SettingsStore:
         return out
 
     def get_raw_overrides(self) -> dict[str, Any]:
-        """Plain-text overrides used to build effective Settings (secrets decrypted)."""
-        return self.get_overrides(reveal_secrets=True)
+        """Plain-text overrides used to build effective Settings.
+
+        Skips secrets that can't be decrypted so they fall back to env vars
+        instead of becoming empty strings that override env values.
+        """
+        return self.get_overrides(reveal_secrets=True, skip_undecryptable=True)
+
+    def clear_undecryptable_secrets(self) -> int:
+        """Wipe any DB-stored secret rows whose Fernet tokens no longer
+        decrypt cleanly. Useful for recovering from a session-secret
+        rotation. Returns the number of rows removed."""
+        removed = 0
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT key, value FROM app_settings WHERE is_secret = 1"
+            ).fetchall()
+            for row in rows:
+                if row["value"] is None:
+                    continue
+                value = json.loads(row["value"])
+                if value and not self._decrypt(value):
+                    conn.execute(
+                        "DELETE FROM app_settings WHERE key = ?", (row["key"],)
+                    )
+                    removed += 1
+                    log.info("settings.override.cleared", key=row["key"])
+        return removed
 
     def set_overrides(self, updates: dict[str, Any]) -> list[str]:
         """Set/clear overrides. Returns list of keys that need a restart."""

@@ -76,22 +76,71 @@ def _build_trigger(settings: Settings):
     return IntervalTrigger(minutes=max(1, settings.sync_interval_minutes))
 
 
+def _load_or_create_session_secret(state_dir: str) -> str:
+    """Persist the auto-generated session secret to the state volume.
+
+    Why: this same secret is the seed for Fernet encryption of secrets in
+    the SettingsStore. If we regenerated it on every boot, every credential
+    saved via the admin UI would silently become un-decryptable on the next
+    deploy — and the resulting empty strings would clobber the matching
+    env vars at Settings-merge time. Persisting it fixes that whole chain.
+    """
+    os.makedirs(state_dir, exist_ok=True)
+    secret_file = os.path.join(state_dir, ".session_secret")
+    try:
+        with open(secret_file, "r", encoding="utf-8") as f:
+            existing = f.read().strip()
+            if existing:
+                return existing
+    except FileNotFoundError:
+        pass
+    fresh = secrets.token_urlsafe(48)
+    try:
+        with open(secret_file, "w", encoding="utf-8") as f:
+            f.write(fresh)
+        os.chmod(secret_file, 0o600)
+    except OSError as e:
+        log.warning(
+            "session_secret.persist.failed",
+            err=str(e),
+            hint="Set ADMIN_SESSION_SECRET explicitly to avoid in-memory regen.",
+        )
+    return fresh
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     bootstrap_settings = get_settings()
     configure_logging(bootstrap_settings.log_level)
 
-    # Auto-generate a session secret if missing so the app still boots.
+    # Auto-generate (or load existing) session secret. Persisted to /data
+    # so Fernet-encrypted secrets stored in SQLite survive redeploys.
     if not bootstrap_settings.admin_session_secret:
         from .config import reload_settings
-        os.environ["ADMIN_SESSION_SECRET"] = secrets.token_urlsafe(48)
+        os.environ["ADMIN_SESSION_SECRET"] = _load_or_create_session_secret(
+            bootstrap_settings.state_dir
+        )
         bootstrap_settings = reload_settings()
+        log.info("session_secret.loaded", source="state_dir")
 
     # SettingsStore lives next to the main state DB and overlays env vars.
     _state.settings_store = SettingsStore(
         bootstrap_settings.state_dir,
         fernet_key_seed=bootstrap_settings.admin_session_secret,
     )
+
+    # Self-heal: if we used to write secrets with a different session-secret
+    # (e.g. before persistence was added), clear the un-decryptable rows so
+    # they don't keep clobbering env-var values.
+    cleared = _state.settings_store.clear_undecryptable_secrets()
+    if cleared:
+        log.warning(
+            "settings.cleared_stale_secrets",
+            count=cleared,
+            hint="These DB-stored secret values were lost when the session "
+                 "secret rotated. Env-var values now take effect cleanly.",
+        )
+
     _state.settings = _state.settings_store.effective_settings()
 
     log.info(
