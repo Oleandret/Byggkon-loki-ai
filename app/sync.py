@@ -67,11 +67,18 @@ class SyncOrchestrator:
     async def _run_inner(self) -> RunStats:
         stats = RunStats()
         run_id = self._state.start_run()
+        self._state.reset_progress()
         log.info("sync.start", run_id=run_id, scope=self._settings.sync_scope.value)
 
         try:
             drives = await discover_drives(self._graph, self._settings)
             log.info("sync.drives.discovered", count=len(drives))
+            for drv in drives:
+                self._state.upsert_drive_progress(
+                    drv.drive_id,
+                    drive_label=drv.owner_label,
+                    phase="discovering",
+                )
 
             for drive in drives:
                 stats.drives_scanned += 1
@@ -112,6 +119,21 @@ class SyncOrchestrator:
             drive=drive.owner_label,
             drive_id=drive.drive_id,
             resuming=bool(delta_link),
+        )
+
+        # Estimate file count for progress tracking (best-effort).
+        estimated_total: Optional[int] = None
+        try:
+            estimated_total = await self._graph.estimate_drive_file_count(drive.drive_id)
+        except Exception as e:  # noqa: BLE001
+            log.debug("sync.drive.estimate.skip", err=str(e))
+
+        self._state.upsert_drive_progress(
+            drive.drive_id,
+            drive_label=drive.owner_label,
+            estimated_total=estimated_total,
+            phase="syncing",
+            mark_started=True,
         )
 
         new_delta_link: Optional[str] = None
@@ -181,6 +203,41 @@ class SyncOrchestrator:
                 drive=drive.owner_label,
                 hint="Graph returned no @odata.deltaLink; will retry next run.",
             )
+        self._state.upsert_drive_progress(drive.drive_id, phase="done")
+
+    def _path_for(self, item: dict) -> str:
+        """Build the full path string for an item ("/Documents/Subfolder/foo.pdf")."""
+        parent = (item.get("parentReference") or {}).get("path", "") or ""
+        # Graph reports parent path as e.g. "/drives/{id}/root:/Folder/Sub"
+        # Normalise to just the path portion.
+        if ":" in parent:
+            parent = parent.split(":", 1)[1] or ""
+        name = item.get("name", "") or ""
+        full = f"{parent}/{name}".replace("//", "/")
+        if not full.startswith("/"):
+            full = "/" + full
+        return full.lower()
+
+    def _passes_path_filter(self, drive: DriveRef, item: dict) -> bool:
+        """Apply include/exclude path filters and per-user folder selections."""
+        path = self._path_for(item)
+        includes = self._settings.include_paths_list()
+        excludes = self._settings.exclude_paths_list()
+
+        # Per-user folder selections override the global include list when
+        # the drive matches a configured user.
+        selections = self._settings.folder_selections()
+        if selections:
+            user_paths = selections.get(drive.owner_label) or []
+            if user_paths:
+                if not any(path.startswith(p) for p in user_paths):
+                    return False
+
+        if includes and not any(path.startswith(p) for p in includes):
+            return False
+        if excludes and any(path.startswith(p) for p in excludes):
+            return False
+        return True
 
     async def _route_item(
         self, drive: DriveRef, item: dict, stats: RunStats
@@ -200,10 +257,30 @@ class SyncOrchestrator:
                 log.error("sync.delete.error", item_id=item.get("id"), err=str(e))
             return
 
+        # Folders surface in delta but aren't files; count them in seen but
+        # don't try to process.
+        if "folder" in item:
+            self._state.increment_drive_progress(drive.drive_id, seen_delta=1)
+            return
+
+        # Path filtering (include/exclude + folder selections)
+        if not self._passes_path_filter(drive, item):
+            self._state.increment_drive_progress(drive.drive_id, seen_delta=1)
+            stats.files_skipped += 1
+            return
+
+        # Live progress: bump seen and surface current file.
+        self._state.increment_drive_progress(
+            drive.drive_id,
+            seen_delta=1,
+            current_file=item.get("name"),
+        )
+
         try:
             res = await self._processor.process_file(drive, item)
             if res.indexed:
                 stats.files_indexed += 1
+                self._state.increment_drive_progress(drive.drive_id, processed_delta=1)
             elif res.skipped_reason:
                 stats.files_skipped += 1
         except Exception as e:  # noqa: BLE001

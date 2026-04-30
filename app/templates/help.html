@@ -17,6 +17,7 @@
       <a href="#step-3">3. Pinecone</a>
       <a href="#step-4">4. Konfigurer {{ brand_name }}</a>
       <a href="#step-5">5. Verifiser</a>
+      <a href="#mcp">Koble til ekstern LLM (MCP)</a>
       <a href="#troubleshooting">Feilsøking</a>
     </div>
   </div>
@@ -145,6 +146,83 @@
       <li>Sjekk <em>Kjøringer</em>-fanen for å se progresjon, indekserte filer og eventuelle feil.</li>
       <li>Verifiser i Pinecone-konsollet at indeksen får vektorer.</li>
     </ol>
+  </div>
+</section>
+
+<section id="mcp" class="section section-light">
+  <div class="max-width help-step">
+    <span class="step-tag">Integrasjon</span>
+    <h2 class="heading-lg">Koble en ekstern LLM til {{ brand_name }} via MCP</h2>
+    <p>
+      <strong>Model Context Protocol (MCP)</strong> er en åpen standard fra
+      Anthropic for å gi LLM-er tilgang til eksterne datakilder. {{ brand_name }}
+      eksponerer kunnskapsbasen som en MCP-server, slik at verktøy som
+      <strong>Claude Desktop</strong>, <strong>Cursor</strong>, <strong>Continue</strong>
+      eller andre MCP-kompatible klienter kan søke i alle indekserte dokumenter
+      uten egen integrasjon.
+    </p>
+
+    <h3 class="mt-l">Hva får du?</h3>
+    <p>
+      Tre verktøy som klientene automatisk oppdager:
+    </p>
+    <ul class="bullet">
+      <li>
+        <code>search_knowledge(query, top_k?, provider?, drive_id?, modality?)</code>
+        — vektorbasert søk i hele Byggkons kunnskap.
+      </li>
+      <li>
+        <code>get_file_chunks(file_id, drive_id?, provider?)</code>
+        — hent alle deler av en spesifikk fil.
+      </li>
+      <li>
+        <code>list_indexed_drives()</code>
+        — oversikt over hvilke OneDrives som er indeksert.
+      </li>
+    </ul>
+
+    <h3 class="mt-l">Slik kobler du til</h3>
+    <ol class="ordered-steps">
+      <li>
+        <strong>Sett MCP_BEARER_TOKEN</strong> i Railway-env-vars (eller via
+        admin-UI). Lag en lang tilfeldig streng — denne er din "passord" for
+        MCP-tilkobling. Eksempel:
+        <pre class="codeblock">openssl rand -hex 32</pre>
+      </li>
+      <li>
+        Åpne <a href="/admin">/admin</a> → fanen <em>MCP-tilkobling</em>.
+      </li>
+      <li>
+        Kopier den klare-til-bruk-konfigurasjonen for klienten din
+        (Claude Desktop, Cursor, eller Continue) og bytt ut placeholder-verdien
+        med din faktiske MCP_BEARER_TOKEN.
+      </li>
+      <li>
+        Restart klienten — verktøyene dukker opp automatisk.
+      </li>
+    </ol>
+
+    <div class="callout">
+      <strong>Sikkerhet:</strong> Bearer-tokenet gir full lese-tilgang til
+      kunnskapsbasen. Behandle det som et passord. Ikke commit det til Git
+      eller lim det inn i delte chatter. Roter det ved å sette en ny verdi
+      og redeploye — gamle klienter vil få 403 og du må oppdatere dem.
+    </div>
+
+    <h3 class="mt-l">Eksempel — bruk fra Claude Desktop</h3>
+    <p>
+      Når Claude Desktop er koblet til, kan du si ting som:
+    </p>
+    <ul class="bullet">
+      <li>"Søk i Byggkon-kunnskapen etter prosjekter med fuktskader på tak."</li>
+      <li>"Vis alle chunks fra rapporten 'Solås skole tilstand 2024'."</li>
+      <li>"Hvilke drives er indeksert?"</li>
+    </ul>
+    <p>
+      Claude vil automatisk kalle riktig <code>search_knowledge</code>-verktøy,
+      få treff fra Pinecone, og bruke innholdet i sitt svar — med korrekte
+      sitater og lenker tilbake til OneDrive-filene.
+    </p>
   </div>
 </section>
 

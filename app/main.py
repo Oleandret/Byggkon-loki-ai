@@ -140,6 +140,24 @@ async def lifespan(app: FastAPI):
     app.include_router(admin_routes.router)
     app.include_router(admin_routes.api)
 
+    # ─── MCP server (mounted under /mcp) ─────────────────────────────
+    if _state.settings.mcp_enabled:
+        try:
+            from .mcp_server import build_mcp_server, MCPBearerAuth
+            mcp = build_mcp_server(_state)
+            _state.mcp_session_manager = mcp.session_manager
+            wrapped = MCPBearerAuth(
+                mcp.streamable_http_app(),
+                token_provider=lambda: _state.settings.mcp_bearer_token,
+            )
+            app.mount("/mcp", wrapped)
+            log.info("mcp.mounted", path="/mcp")
+        except Exception as e:  # noqa: BLE001
+            log.warning("mcp.mount.failed", err=str(e))
+            _state.mcp_session_manager = None
+    else:
+        _state.mcp_session_manager = None
+
     # Scheduler.
     _state.scheduler = AsyncIOScheduler()
     if _state.orchestrator is not None:
@@ -156,10 +174,22 @@ async def lifespan(app: FastAPI):
     if _state.settings.sync_on_startup and _state.orchestrator is not None:
         asyncio.create_task(_run_startup_sync())
 
+    # MCP session manager needs to be running to handle requests.
+    mcp_sm_ctx = None
+    sm = getattr(_state, "mcp_session_manager", None)
+    if sm is not None:
+        mcp_sm_ctx = sm.run()
+        await mcp_sm_ctx.__aenter__()
+
     try:
         yield
     finally:
         log.info("app.shutdown")
+        if mcp_sm_ctx is not None:
+            try:
+                await mcp_sm_ctx.__aexit__(None, None, None)
+            except Exception as e:  # noqa: BLE001
+                log.warning("mcp.shutdown.error", err=str(e))
         if getattr(_state, "scheduler", None):
             _state.scheduler.shutdown(wait=False)
         if getattr(_state, "graph", None) is not None:

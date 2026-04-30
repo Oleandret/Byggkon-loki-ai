@@ -57,6 +57,18 @@ CREATE TABLE IF NOT EXISTS sync_runs (
     errors          INTEGER DEFAULT 0,
     notes           TEXT
 );
+
+CREATE TABLE IF NOT EXISTS sync_progress (
+    drive_id        TEXT PRIMARY KEY,
+    drive_label     TEXT,
+    estimated_total INTEGER,
+    files_seen      INTEGER NOT NULL DEFAULT 0,
+    files_processed INTEGER NOT NULL DEFAULT 0,
+    current_file    TEXT,
+    phase           TEXT,                          -- 'discovering' | 'syncing' | 'done'
+    started_at      REAL,
+    updated_at      REAL NOT NULL
+);
 """
 
 
@@ -212,6 +224,100 @@ class StateStore:
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM sync_runs ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    # ─── progress (live during a sync run) ───────────────────────────
+    def reset_progress(self) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM sync_progress")
+
+    def upsert_drive_progress(
+        self,
+        drive_id: str,
+        *,
+        drive_label: str | None = None,
+        estimated_total: int | None = None,
+        files_seen: int | None = None,
+        files_processed: int | None = None,
+        current_file: str | None = None,
+        phase: str | None = None,
+        mark_started: bool = False,
+    ) -> None:
+        with self._lock, self._connect() as conn:
+            existing = conn.execute(
+                "SELECT * FROM sync_progress WHERE drive_id = ?", (drive_id,)
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    """
+                    INSERT INTO sync_progress
+                      (drive_id, drive_label, estimated_total,
+                       files_seen, files_processed, current_file, phase,
+                       started_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        drive_id,
+                        drive_label or "",
+                        estimated_total,
+                        files_seen or 0,
+                        files_processed or 0,
+                        current_file,
+                        phase or "discovering",
+                        time.time() if mark_started else None,
+                        time.time(),
+                    ),
+                )
+            else:
+                fields = []
+                params: list = []
+                if drive_label is not None:
+                    fields.append("drive_label = ?"); params.append(drive_label)
+                if estimated_total is not None:
+                    fields.append("estimated_total = ?"); params.append(estimated_total)
+                if files_seen is not None:
+                    fields.append("files_seen = ?"); params.append(files_seen)
+                if files_processed is not None:
+                    fields.append("files_processed = ?"); params.append(files_processed)
+                if current_file is not None:
+                    fields.append("current_file = ?"); params.append(current_file)
+                if phase is not None:
+                    fields.append("phase = ?"); params.append(phase)
+                if mark_started:
+                    fields.append("started_at = ?"); params.append(time.time())
+                fields.append("updated_at = ?"); params.append(time.time())
+                params.append(drive_id)
+                conn.execute(
+                    f"UPDATE sync_progress SET {', '.join(fields)} WHERE drive_id = ?",
+                    params,
+                )
+
+    def increment_drive_progress(
+        self,
+        drive_id: str,
+        *,
+        seen_delta: int = 0,
+        processed_delta: int = 0,
+        current_file: str | None = None,
+    ) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE sync_progress
+                SET files_seen = files_seen + ?,
+                    files_processed = files_processed + ?,
+                    current_file = COALESCE(?, current_file),
+                    updated_at = ?
+                WHERE drive_id = ?
+                """,
+                (seen_delta, processed_delta, current_file, time.time(), drive_id),
+            )
+
+    def progress_snapshot(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM sync_progress ORDER BY started_at NULLS LAST, drive_label"
             ).fetchall()
             return [dict(r) for r in rows]
 

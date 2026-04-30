@@ -10,7 +10,10 @@
 
       <nav class="admin-nav">
         <button data-tab="dashboard" class="admin-tab is-active">Oversikt</button>
+        <button data-tab="progress" class="admin-tab">Fremdrift</button>
+        <button data-tab="folders" class="admin-tab">Mapper</button>
         <button data-tab="health" class="admin-tab">Systemstatus</button>
+        <button data-tab="mcp" class="admin-tab">MCP-tilkobling</button>
         <button data-tab="settings" class="admin-tab">Innstillinger</button>
         <button data-tab="runs" class="admin-tab">Kjøringer</button>
         <button data-tab="tests" class="admin-tab">Test tilkoblinger</button>
@@ -65,6 +68,88 @@
       </div>
     </section>
 
+    <!-- ─── Tab: Progress ──────────────────────────────── -->
+    <section class="tab-pane" data-tab-pane="progress">
+      <header class="pane-head">
+        <p class="eyebrow">Live</p>
+        <h1 class="heading-xl">Fremdrift</h1>
+        <p class="muted" id="progress-summary-line">Venter på data…</p>
+      </header>
+
+      <div class="progress-overall card-soft">
+        <div class="progress-overall-head">
+          <span class="kpi-label">Total fremdrift</span>
+          <span id="progress-eta" class="muted small">—</span>
+        </div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%"></div>
+        </div>
+        <div class="progress-overall-stats">
+          <span><strong id="progress-processed">0</strong> indeksert</span>
+          <span><strong id="progress-seen">0</strong> sett</span>
+          <span><strong id="progress-estimated">—</strong> estimert totalt</span>
+          <span><strong id="progress-rate">0</strong> filer/min</span>
+        </div>
+      </div>
+
+      <div class="kpi-grid mt-l">
+        <div class="kpi-card">
+          <span class="kpi-label">Drives ferdig</span>
+          <span class="kpi-value" id="progress-drives-done">0</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Drives aktive</span>
+          <span class="kpi-value" id="progress-drives-active">0</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Drives venter</span>
+          <span class="kpi-value" id="progress-drives-pending">0</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Tid brukt</span>
+          <span class="kpi-value" id="progress-elapsed">—</span>
+        </div>
+      </div>
+
+      <h2 class="heading-sm mt-l">Per drive</h2>
+      <div id="progress-drives-grid" class="progress-drives-grid">
+        <p class="muted">Ingen aktiv synkronisering.</p>
+      </div>
+    </section>
+
+    <!-- ─── Tab: Folders ───────────────────────────────── -->
+    <section class="tab-pane" data-tab-pane="folders">
+      <header class="pane-head">
+        <p class="eyebrow">Mappeutvalg</p>
+        <h1 class="heading-xl">Velg mapper i OneDrive</h1>
+        <p class="muted">
+          Velg en bruker, bla i deres mapper, og kryss av mapper du vil
+          inkludere i synkronisering. Krever at Microsoft Graph er konfigurert.
+        </p>
+      </header>
+
+      <div class="folder-shell">
+        <div class="folder-pickers">
+          <label class="field">
+            <span class="field-label">Bruker</span>
+            <select id="folder-user-select" class="input">
+              <option value="">Laster brukere…</option>
+            </select>
+          </label>
+          <button type="button" id="folder-load-btn" class="btn btn-secondary" disabled>Last mapper</button>
+        </div>
+
+        <div id="folder-tree" class="folder-tree">
+          <p class="muted">Velg en bruker og last mapper for å begynne.</p>
+        </div>
+
+        <div class="folder-actions">
+          <button type="button" id="folder-save-btn" class="btn btn-primary">Lagre utvalg</button>
+          <span id="folder-save-status" class="muted small"></span>
+        </div>
+      </div>
+    </section>
+
     <!-- ─── Tab: Health ────────────────────────────────── -->
     <section class="tab-pane" data-tab-pane="health">
       <header class="pane-head">
@@ -82,6 +167,103 @@
 
       <div id="health-grid" class="health-grid">
         <p class="muted">Laster…</p>
+      </div>
+    </section>
+
+    <!-- ─── Tab: MCP ───────────────────────────────────── -->
+    <section class="tab-pane" data-tab-pane="mcp">
+      <header class="pane-head">
+        <p class="eyebrow">Eksterne LLM-er</p>
+        <h1 class="heading-xl">MCP-tilkobling</h1>
+        <p class="muted">
+          Koble Claude Desktop, Cursor, Continue eller andre MCP-kompatible verktøy
+          til {{ brand_name }}s kunnskapsbase. Da kan de søke og hente innhold fra
+          alle de indekserte dokumentene.
+        </p>
+      </header>
+
+      <div class="card-soft">
+        <h3>Tilkoblingsdetaljer</h3>
+        <table class="connection-table">
+          <tr>
+            <th>URL</th>
+            <td><code id="mcp-url">—</code> <button class="btn btn-ghost btn-copy" data-copy="mcp-url">Kopier</button></td>
+          </tr>
+          <tr>
+            <th>Transport</th>
+            <td><code>streamable-http</code></td>
+          </tr>
+          <tr>
+            <th>Auth</th>
+            <td><code>Authorization: Bearer &lt;MCP_BEARER_TOKEN&gt;</code></td>
+          </tr>
+          <tr>
+            <th>Status</th>
+            <td><span id="mcp-status" class="phase-tag">Sjekker…</span></td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="card-soft mt-l">
+        <h3>Tilgjengelige verktøy (tools)</h3>
+        <ul class="tool-list">
+          <li>
+            <code>search_knowledge(query, top_k?, provider?, drive_id?, modality?)</code>
+            <p class="muted small">Vektorbasert søk i hele kunnskapsbasen.</p>
+          </li>
+          <li>
+            <code>get_file_chunks(file_id, drive_id?, provider?)</code>
+            <p class="muted small">Henter alle deler (tekst + bilder) av en spesifikk fil.</p>
+          </li>
+          <li>
+            <code>list_indexed_drives()</code>
+            <p class="muted small">Oversikt over hvilke OneDrives som er indeksert.</p>
+          </li>
+        </ul>
+      </div>
+
+      <div class="card-soft mt-l">
+        <h3>Klar-til-bruk-konfig</h3>
+
+        <details class="mcp-client-cfg" open>
+          <summary>Claude Desktop</summary>
+          <p class="muted small">
+            Legg til i <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>
+            (macOS) eller <code>%APPDATA%\Claude\claude_desktop_config.json</code> (Windows).
+            Restart Claude Desktop etterpå.
+          </p>
+          <pre class="codeblock" id="mcp-claude-cfg">Laster…</pre>
+          <button class="btn btn-secondary btn-copy" data-copy="mcp-claude-cfg">Kopier</button>
+        </details>
+
+        <details class="mcp-client-cfg">
+          <summary>Cursor</summary>
+          <p class="muted small">
+            Settings → MCP → Add new MCP server, eller legg direkte i
+            <code>~/.cursor/mcp.json</code>.
+          </p>
+          <pre class="codeblock" id="mcp-cursor-cfg">Laster…</pre>
+          <button class="btn btn-secondary btn-copy" data-copy="mcp-cursor-cfg">Kopier</button>
+        </details>
+
+        <details class="mcp-client-cfg">
+          <summary>Continue (VS Code-extensjon)</summary>
+          <p class="muted small">
+            Legg til under <code>experimental.modelContextProtocolServers</code> i
+            <code>~/.continue/config.json</code>.
+          </p>
+          <pre class="codeblock" id="mcp-continue-cfg">Laster…</pre>
+          <button class="btn btn-secondary btn-copy" data-copy="mcp-continue-cfg">Kopier</button>
+        </details>
+
+        <details class="mcp-client-cfg">
+          <summary>Generelt: streamable HTTP</summary>
+          <p class="muted small">
+            Kopier rå-konfig for andre MCP-klienter som støtter streamable HTTP.
+          </p>
+          <pre class="codeblock" id="mcp-generic-cfg">Laster…</pre>
+          <button class="btn btn-secondary btn-copy" data-copy="mcp-generic-cfg">Kopier</button>
+        </details>
       </div>
     </section>
 

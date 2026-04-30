@@ -222,6 +222,106 @@ async def api_runs(limit: int = 20) -> dict:
     return {"runs": _app_state.state.latest_runs(limit=limit)}
 
 
+@api.get("/mcp/info")
+async def api_mcp_info(request: Request) -> dict:
+    """Connection details for the MCP tab — masked token, URL, status."""
+    s = _app_state.settings
+    # Build the public URL from the request — works whether you're on
+    # localhost or behind Railway's proxy (X-Forwarded-Host).
+    fwd_host = request.headers.get("x-forwarded-host")
+    fwd_proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = fwd_host or request.url.netloc
+    base_url = f"{fwd_proto}://{host}"
+    mcp_url = f"{base_url}/mcp" if s.mcp_enabled else ""
+
+    masked_token = ""
+    if s.mcp_bearer_token:
+        from .settings_store import _mask  # type: ignore
+        masked_token = _mask(s.mcp_bearer_token)
+
+    return {
+        "enabled": s.mcp_enabled,
+        "url": mcp_url,
+        "bearer_token_masked": masked_token,
+        "bearer_token_set": bool(s.mcp_bearer_token),
+        "default_provider": s.mcp_default_provider,
+        "default_top_k": s.mcp_default_top_k,
+        "tools": [
+            {"name": "search_knowledge", "args": ["query", "top_k?", "provider?", "drive_id?", "modality?"]},
+            {"name": "get_file_chunks", "args": ["file_id", "drive_id?", "provider?"]},
+            {"name": "list_indexed_drives", "args": []},
+        ],
+    }
+
+
+@api.get("/progress")
+async def api_progress() -> dict:
+    """Live per-drive progress + aggregate ETA for the current sync run."""
+    snap = _app_state.state.progress_snapshot()
+    now = time.time()
+
+    total_seen = 0
+    total_processed = 0
+    total_estimated = 0
+    earliest_start = now
+    drives_done = 0
+    drives_active = 0
+    drives_pending = 0
+
+    for row in snap:
+        total_seen += int(row.get("files_seen") or 0)
+        total_processed += int(row.get("files_processed") or 0)
+        if row.get("estimated_total"):
+            total_estimated += int(row["estimated_total"])
+        if row.get("started_at") and row["started_at"] < earliest_start:
+            earliest_start = row["started_at"]
+        phase = row.get("phase")
+        if phase == "done":
+            drives_done += 1
+        elif phase == "syncing":
+            drives_active += 1
+        else:
+            drives_pending += 1
+
+    elapsed = max(0.001, now - earliest_start) if snap else 0
+    rate = (total_processed / elapsed) if elapsed > 0 else 0
+    eta = None
+    if rate > 0 and total_estimated and total_processed < total_estimated:
+        remaining = max(0, total_estimated - total_processed)
+        eta = int(remaining / rate)
+
+    # Most recent run + scheduler next-run.
+    last_run = None
+    runs = _app_state.state.latest_runs(limit=1)
+    if runs:
+        last_run = runs[0]
+
+    sched = getattr(_app_state, "scheduler", None)
+    next_run_at = None
+    if sched is not None and sched.running:
+        job = sched.get_job("onedrive-sync")
+        if job and job.next_run_time:
+            next_run_at = job.next_run_time.timestamp()
+
+    return {
+        "now": now,
+        "drives": snap,
+        "summary": {
+            "total_seen": total_seen,
+            "total_processed": total_processed,
+            "total_estimated": total_estimated or None,
+            "drives_done": drives_done,
+            "drives_active": drives_active,
+            "drives_pending": drives_pending,
+            "files_per_minute": round(rate * 60, 1),
+            "elapsed_seconds": int(elapsed),
+            "eta_seconds": eta,
+        },
+        "last_run": last_run,
+        "next_run_at": next_run_at,
+    }
+
+
 @api.post("/sync")
 async def api_trigger_sync() -> dict:
     if _app_state.orchestrator is None:
@@ -284,6 +384,68 @@ async def api_test_pinecone() -> dict:
         return {"ok": True, "indexes": per_index}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e)}
+
+
+# ─── Graph helpers used by the Folders tab ──────────────────────────
+@api.get("/graph/users")
+async def api_graph_users(limit: int = 200) -> dict:
+    """List users in the tenant for the folder picker."""
+    if _app_state.graph is None:
+        raise HTTPException(503, "Graph not configured")
+    out = []
+    async for u in _app_state.graph.iter_users():
+        if len(out) >= limit:
+            break
+        out.append({
+            "id": u.get("id"),
+            "upn": u.get("userPrincipalName"),
+            "display_name": u.get("displayName"),
+        })
+    return {"users": out}
+
+
+@api.get("/graph/folders")
+async def api_graph_folders(user: str) -> dict:
+    """Return the top-level folders in a user's OneDrive, plus the
+    currently saved selection for that user."""
+    if _app_state.graph is None:
+        raise HTTPException(503, "Graph not configured")
+    drv = await _app_state.graph.get_user_drive(user)
+    if not drv:
+        raise HTTPException(404, f"No drive for {user}")
+    drive_id = drv["id"]
+    root_id = await _app_state.graph.get_root_folder_id(drive_id)
+    folders: list[dict] = []
+    if root_id:
+        async for child in _app_state.graph.iter_folder_children(drive_id, root_id):
+            if "folder" not in child:
+                continue
+            name = child.get("name", "")
+            path = f"/{name}"
+            folders.append({
+                "id": child.get("id"),
+                "name": name,
+                "path": path,
+                "child_count": (child.get("folder") or {}).get("childCount", 0),
+            })
+    selections = _app_state.settings.folder_selections().get(user, [])
+    return {"drive_id": drive_id, "user": user, "folders": folders, "selected_paths": selections}
+
+
+@api.post("/graph/folder-selection")
+async def api_graph_folder_selection(payload: dict) -> dict:
+    """Save the per-user folder selection back into settings."""
+    user = payload.get("user")
+    paths = payload.get("paths") or []
+    if not user:
+        raise HTTPException(400, "user is required")
+    import json
+    current = _app_state.settings.folder_selections()
+    current[user] = list(paths)
+    new_value = json.dumps(current)
+    _app_state.settings_store.set_overrides({"sync_folder_selections": new_value})
+    _app_state.settings = _app_state.settings_store.effective_settings()
+    return {"ok": True, "saved": {user: paths}}
 
 
 # ─── Aggregate health check ──────────────────────────────────────────

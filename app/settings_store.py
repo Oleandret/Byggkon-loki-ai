@@ -180,6 +180,32 @@ FIELDS: tuple[FieldSpec, ...] = (
               "Vises i topbar og tittel."),
     FieldSpec("brand_owner", "Eier/firma", "Branding", "text",
               "Vises ved siden av produktnavnet."),
+
+    # ─── MCP-server ──────────────────────────────────────────────────
+    FieldSpec("mcp_enabled", "MCP-server aktivert", "MCP (eksterne LLM-er)", "bool",
+              "Slå av for å skru av /mcp-endepunktet helt.",
+              requires_restart=True),
+    FieldSpec("mcp_bearer_token", "MCP bearer-token", "MCP (eksterne LLM-er)", "password",
+              "Eksterne LLM-klienter må sende Authorization: Bearer <token>. Lag en lang tilfeldig streng.",
+              requires_restart=True),
+    FieldSpec("mcp_default_provider", "Default embedding-provider", "MCP (eksterne LLM-er)", "enum",
+              "Hvilken Pinecone-indeks søker MCP i hvis klienten ikke spesifiserer.",
+              options=("openai", "gemini")),
+    FieldSpec("mcp_default_top_k", "Default top_k", "MCP (eksterne LLM-er)", "number",
+              "Antall treff returnert per søk hvis klienten ikke spesifiserer."),
+
+    # ─── Path-filtre ─────────────────────────────────────────────────
+    FieldSpec("sync_include_paths", "Inkluder-stier", "Synkronisering", "textarea",
+              "En sti per linje (eller komma-separert). Filer må starte med en av disse for å indekseres.",
+              placeholder="/Documents/Knowledge\n/Projects/Active",
+              advanced=True),
+    FieldSpec("sync_exclude_paths", "Ekskluder-stier", "Synkronisering", "textarea",
+              "Filer som starter med disse stiene hoppes over.",
+              placeholder="/Personal\n/Photos",
+              advanced=True),
+    FieldSpec("sync_folder_selections", "Mappeutvalg per bruker (JSON)", "Synkronisering", "textarea",
+              "Settes via Mapper-fanen. Manuell redigering kun for power-users.",
+              advanced=True),
 )
 
 

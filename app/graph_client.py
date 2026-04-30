@@ -247,6 +247,62 @@ class GraphClient:
         async for drive in self.iter_paged(f"/sites/{site_id}/drives"):
             yield drive
 
+    async def get_drive(self, drive_id: str) -> Optional[dict[str, Any]]:
+        try:
+            return await self.get_json(f"/drives/{drive_id}")
+        except GraphError as e:
+            if e.status in (403, 404):
+                return None
+            raise
+
+    async def estimate_drive_file_count(self, drive_id: str) -> Optional[int]:
+        """Best-effort total file count for a drive.
+
+        Strategy: pull the root quota, which gives total bytes used. We can
+        also try /root with $expand=children/$count for direct file count,
+        but Graph doesn't always honour that. Fall back to None when unsure.
+        """
+        try:
+            root = await self.get_json(
+                f"/drives/{drive_id}/root",
+                params={"$select": "id,name,folder"},
+            )
+        except GraphError:
+            return None
+        # Some drives expose a 'folder.childCount' on root, but it only counts
+        # immediate children, not the recursive total. We use a search query
+        # filtered by 'file' to get a rough count instead.
+        try:
+            data = await self.get_json(
+                f"/drives/{drive_id}/root/search(q='')",
+                params={"$select": "id", "$top": 1, "$count": "true"},
+                # ConsistencyLevel header is required for $count on Graph.
+            )
+            if "@odata.count" in data:
+                return int(data["@odata.count"])
+        except GraphError:
+            pass
+        return None
+
+    async def iter_folder_children(
+        self, drive_id: str, folder_id: str
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Iterate immediate children of a folder (paged)."""
+        async for item in self.iter_paged(
+            f"/drives/{drive_id}/items/{folder_id}/children",
+            params={"$select": "id,name,folder,file,parentReference,size,webUrl"},
+        ):
+            yield item
+
+    async def get_root_folder_id(self, drive_id: str) -> Optional[str]:
+        try:
+            data = await self.get_json(
+                f"/drives/{drive_id}/root", params={"$select": "id"}
+            )
+            return data.get("id")
+        except GraphError:
+            return None
+
     # ─── Download ─────────────────────────────────────────────────────
     @asynccontextmanager
     async def stream_drive_item(

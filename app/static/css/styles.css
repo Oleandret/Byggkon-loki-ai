@@ -536,6 +536,148 @@ code { background: var(--obsidian-soft); padding: 1px 6px; border-radius: 4px; }
 }
 .test-output.is-shown { display: block; }
 
+/* ─── Progress / Fremdrift ───────────────────────────────────────── */
+.progress-overall {
+  padding: 22px 24px;
+}
+.progress-overall-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.progress-bar-track {
+  width: 100%; height: 12px; border-radius: 999px;
+  background: var(--grey-100); overflow: hidden;
+}
+.progress-bar-track.tiny { height: 6px; }
+.progress-bar-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--green), #2bbe98);
+  transition: width 0.4s ease;
+}
+.progress-overall-stats {
+  display: flex; gap: 24px; flex-wrap: wrap;
+  margin-top: 14px; font-size: 13px; color: var(--grey-700);
+}
+.progress-overall-stats strong {
+  color: var(--obsidian); font-size: 18px; font-weight: 800;
+  letter-spacing: -0.01em; margin-right: 6px;
+}
+
+.progress-drives-grid {
+  margin-top: 16px; display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.progress-drive-card {
+  background: var(--white); border: 1px solid var(--obsidian-dim);
+  border-radius: var(--radius); padding: 16px 18px;
+  transition: box-shadow 0.18s, border-color 0.18s;
+}
+.progress-drive-card header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px;
+}
+.progress-drive-card h4 {
+  margin: 0; font-size: 14px; font-weight: 700;
+  letter-spacing: -0.005em;
+}
+.phase-tag {
+  font-size: 11px; font-weight: 700; padding: 2px 8px;
+  border-radius: 999px; text-transform: uppercase; letter-spacing: 0.06em;
+  background: var(--grey-100); color: var(--grey-700);
+}
+.progress-drive-active .phase-tag { background: var(--green-dim); color: var(--green); }
+.progress-drive-active   { border-left: 3px solid var(--green); }
+.progress-drive-done .phase-tag    { background: var(--obsidian-soft); color: var(--obsidian); }
+.progress-drive-done     { border-left: 3px solid var(--grey-300); opacity: 0.85; }
+.progress-drive-pending  { border-left: 3px solid var(--grey-200); }
+.progress-drive-stats {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-top: 8px;
+}
+
+/* ─── Folders tab ────────────────────────────────────────────────── */
+.folder-shell {
+  background: var(--white); border: 1px solid var(--obsidian-dim);
+  border-radius: var(--radius-lg); padding: 22px 24px;
+}
+.folder-pickers {
+  display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.folder-pickers .field { flex: 1; min-width: 240px; }
+.folder-tree {
+  background: var(--ghost); border: 1px solid var(--grey-100);
+  border-radius: var(--radius); padding: 14px 18px;
+  min-height: 200px; max-height: 480px; overflow-y: auto;
+}
+.folder-list { list-style: none; padding: 0; margin: 0; }
+.folder-item {
+  padding: 8px 10px; border-bottom: 1px solid var(--grey-100);
+}
+.folder-item:last-child { border-bottom: 0; }
+.folder-item label {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+}
+.folder-name { font-weight: 500; font-size: 14px; }
+.folder-actions {
+  display: flex; align-items: center; gap: 14px; margin-top: 16px;
+}
+
+/* ─── MCP tab ────────────────────────────────────────────────────── */
+.connection-table {
+  width: 100%; border-collapse: collapse;
+  margin-top: 8px; font-size: 14px;
+}
+.connection-table th {
+  text-align: left; vertical-align: top;
+  padding: 10px 14px 10px 0;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--grey-500); font-weight: 700; width: 130px;
+}
+.connection-table td {
+  padding: 10px 0; border-bottom: 1px solid var(--grey-100);
+  vertical-align: top;
+}
+.connection-table tr:last-child td { border-bottom: 0; }
+.connection-table code {
+  background: var(--ghost); padding: 4px 8px; border-radius: 6px;
+  font-size: 13px;
+}
+
+.tool-list {
+  list-style: none; padding: 0; margin: 12px 0 0;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.tool-list li {
+  background: var(--ghost); padding: 12px 14px;
+  border-radius: var(--radius); border: 1px solid var(--grey-100);
+}
+.tool-list code {
+  background: transparent; padding: 0;
+  font-size: 13px; color: var(--obsidian); font-weight: 600;
+}
+.tool-list p { margin: 6px 0 0; }
+
+.mcp-client-cfg {
+  margin-top: 14px; background: var(--ghost);
+  border: 1px solid var(--grey-100); border-radius: var(--radius);
+  padding: 14px 18px;
+}
+.mcp-client-cfg summary {
+  cursor: pointer; font-weight: 600; font-size: 14px;
+  list-style: none;
+}
+.mcp-client-cfg summary::-webkit-details-marker { display: none; }
+.mcp-client-cfg summary::after {
+  content: "+"; float: right; color: var(--grey-500); font-weight: 700;
+}
+.mcp-client-cfg[open] summary::after { content: "−"; }
+.mcp-client-cfg p { margin: 8px 0 12px; }
+.mcp-client-cfg .codeblock {
+  font-size: 12px; max-height: 320px; overflow: auto;
+}
+.btn-copy { padding: 4px 12px; font-size: 12px; }
+
 /* ─── Health / Systemstatus ──────────────────────────────────────── */
 .health-actions {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;

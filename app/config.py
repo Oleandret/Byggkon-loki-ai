@@ -52,7 +52,10 @@ class Settings(BaseSettings):
     sync_scope: SyncScope = SyncScope.ALL_USERS
     sync_users: str = ""  # comma-separated UPNs
     sync_drive_ids: str = ""  # comma-separated drive IDs
-    sync_path_prefix: str = ""
+    sync_path_prefix: str = ""  # legacy single prefix; see include/exclude below
+    sync_include_paths: str = ""  # newline- or comma-separated path prefixes to include
+    sync_exclude_paths: str = ""  # newline- or comma-separated path prefixes to skip
+    sync_folder_selections: str = ""  # JSON: {"user@x": ["/Documents", ...]}
     max_file_bytes: int = 50 * 1024 * 1024
 
     # Scheduler
@@ -112,6 +115,14 @@ class Settings(BaseSettings):
     brand_name: str = "Loki AI"
     brand_owner: str = "Byggkon"
 
+    # ─── MCP server ──────────────────────────────────────────────────
+    # Bearer token clients must present in `Authorization: Bearer <token>`.
+    # Empty disables the MCP endpoint.
+    mcp_enabled: bool = True
+    mcp_bearer_token: str = ""
+    mcp_default_top_k: int = 10
+    mcp_default_provider: str = "openai"  # which Pinecone index to search
+
     @field_validator("sync_users", "sync_drive_ids", mode="before")
     @classmethod
     def _strip(cls, v: object) -> str:
@@ -136,6 +147,50 @@ class Settings(BaseSettings):
         if self.embedding_provider == EmbeddingProvider.BOTH:
             return ["openai", "gemini"]
         return [self.embedding_provider.value]
+
+    def include_paths_list(self) -> list[str]:
+        """Parsed list of path prefixes to include, normalised to lower-case."""
+        out: list[str] = []
+        if self.sync_path_prefix:
+            out.append(self.sync_path_prefix)
+        for raw in (self.sync_include_paths or "").replace(",", "\n").splitlines():
+            p = raw.strip()
+            if p:
+                out.append(p)
+        return [_normalise_path(p) for p in out]
+
+    def exclude_paths_list(self) -> list[str]:
+        out: list[str] = []
+        for raw in (self.sync_exclude_paths or "").replace(",", "\n").splitlines():
+            p = raw.strip()
+            if p:
+                out.append(p)
+        return [_normalise_path(p) for p in out]
+
+    def folder_selections(self) -> dict[str, list[str]]:
+        if not self.sync_folder_selections:
+            return {}
+        try:
+            import json
+            data = json.loads(self.sync_folder_selections)
+            return {
+                str(k): [_normalise_path(p) for p in (v or [])]
+                for k, v in data.items()
+            }
+        except Exception:
+            return {}
+
+
+def _normalise_path(p: str) -> str:
+    """Lower-case a path and strip trailing slashes for prefix matching."""
+    if not p:
+        return ""
+    s = p.strip().lower()
+    while s.endswith("/"):
+        s = s[:-1]
+    if not s.startswith("/"):
+        s = "/" + s
+    return s
 
     @property
     def graph_authority_url(self) -> str:

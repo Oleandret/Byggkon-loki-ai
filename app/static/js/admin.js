@@ -16,6 +16,9 @@
       if (target === "runs") loadRuns();
       if (target === "settings") loadSettings();
       if (target === "health") loadHealth();
+      if (target === "progress") loadProgress();
+      if (target === "folders") loadFoldersTab();
+      if (target === "mcp") loadMcpTab();
     });
   });
 
@@ -519,6 +522,305 @@
   $$(".admin-tab").forEach((tab) =>
     tab.addEventListener("click", () => setTimeout(maybeStartHealthAutoRefresh, 50))
   );
+
+  // ─── Progress (Fremdrift) ────────────────────────────────────────
+  let _progressTimer = null;
+
+  function fmtSecs(sec) {
+    if (sec == null) return "—";
+    if (sec < 60) return `${sec} s`;
+    if (sec < 3600) return `${Math.floor(sec / 60)} m ${sec % 60} s`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)} t ${Math.floor((sec % 3600) / 60)} m`;
+    return `${Math.floor(sec / 86400)} d ${Math.floor((sec % 86400) / 3600)} t`;
+  }
+
+  async function loadProgress() {
+    try {
+      const p = await api("GET", "/api/progress");
+      const s = p.summary;
+      const pct = s.total_estimated
+        ? Math.min(100, (s.total_processed / s.total_estimated) * 100)
+        : (s.total_seen ? Math.min(100, (s.total_processed / s.total_seen) * 100) : 0);
+
+      document.getElementById("progress-bar-fill").style.width = pct.toFixed(1) + "%";
+      document.getElementById("progress-processed").textContent = s.total_processed;
+      document.getElementById("progress-seen").textContent = s.total_seen;
+      document.getElementById("progress-estimated").textContent = s.total_estimated || "—";
+      document.getElementById("progress-rate").textContent = s.files_per_minute;
+      document.getElementById("progress-elapsed").textContent = fmtSecs(s.elapsed_seconds);
+      document.getElementById("progress-eta").textContent =
+        s.eta_seconds != null ? `Estimert gjenstår: ${fmtSecs(s.eta_seconds)}` : "Estimat ikke tilgjengelig";
+
+      document.getElementById("progress-drives-done").textContent = s.drives_done;
+      document.getElementById("progress-drives-active").textContent = s.drives_active;
+      document.getElementById("progress-drives-pending").textContent = s.drives_pending;
+
+      const summaryLine = (() => {
+        if (s.drives_active > 0)
+          return `Synkronisering pågår — ${s.drives_active} drive${s.drives_active === 1 ? "" : "s"} aktive akkurat nå.`;
+        if (p.next_run_at) {
+          const next = new Date(p.next_run_at * 1000);
+          return `Ingen aktiv kjøring. Neste planlagt: ${next.toLocaleTimeString("nb-NO")}.`;
+        }
+        return "Ingen aktiv kjøring.";
+      })();
+      document.getElementById("progress-summary-line").textContent = summaryLine;
+
+      const grid = document.getElementById("progress-drives-grid");
+      if (!p.drives.length) {
+        grid.innerHTML = `<p class="muted">Ingen drives spores ennå.</p>`;
+      } else {
+        grid.innerHTML = p.drives
+          .map((d) => {
+            const total = d.estimated_total || d.files_seen || 0;
+            const done = d.files_processed || 0;
+            const pct = total ? Math.min(100, (done / total) * 100) : 0;
+            const phaseClass = d.phase === "done" ? "done" : d.phase === "syncing" ? "active" : "pending";
+            return `
+              <article class="progress-drive-card progress-drive-${phaseClass}">
+                <header>
+                  <h4>${escapeHtml(d.drive_label || "(ukjent)")}</h4>
+                  <span class="phase-tag">${escapeHtml(d.phase || "")}</span>
+                </header>
+                <div class="progress-bar-track tiny">
+                  <div class="progress-bar-fill" style="width: ${pct.toFixed(1)}%"></div>
+                </div>
+                <div class="progress-drive-stats muted small">
+                  <span>${done} / ${total || "?"}</span>
+                  <span>${d.current_file ? "📄 " + escapeHtml(truncate(d.current_file, 40)) : ""}</span>
+                </div>
+              </article>`;
+          })
+          .join("");
+      }
+    } catch (e) {
+      console.warn("progress failed:", e);
+    }
+  }
+
+  function maybeStartProgressAutoRefresh() {
+    const isActive = document
+      .querySelector('[data-tab-pane="progress"]')
+      ?.classList.contains("is-active");
+    if (isActive && !_progressTimer) {
+      _progressTimer = setInterval(loadProgress, 3000);
+    } else if (!isActive && _progressTimer) {
+      clearInterval(_progressTimer);
+      _progressTimer = null;
+    }
+  }
+  $$(".admin-tab").forEach((tab) =>
+    tab.addEventListener("click", () => setTimeout(maybeStartProgressAutoRefresh, 50))
+  );
+
+  // ─── Folders tab (interactive picker) ─────────────────────────────
+  let _folderState = { user: null, includes: new Set(), expanded: new Map() };
+
+  async function loadFoldersTab() {
+    // Populate user dropdown from /api/graph/users (if available).
+    const sel = document.getElementById("folder-user-select");
+    sel.innerHTML = `<option value="">Laster brukere…</option>`;
+    try {
+      const r = await api("GET", "/api/graph/users");
+      sel.innerHTML =
+        `<option value="">— velg bruker —</option>` +
+        r.users
+          .map(
+            (u) =>
+              `<option value="${escapeHtml(u.upn || u.id)}">${escapeHtml(
+                u.display_name || u.upn || u.id
+              )}</option>`
+          )
+          .join("");
+    } catch (e) {
+      sel.innerHTML = `<option value="">Feil: ${escapeHtml(e.message)}</option>`;
+    }
+    document.getElementById("folder-load-btn").disabled = false;
+  }
+
+  document.getElementById("folder-user-select")?.addEventListener("change", (e) => {
+    _folderState.user = e.target.value || null;
+    document.getElementById("folder-load-btn").disabled = !_folderState.user;
+  });
+
+  document.getElementById("folder-load-btn")?.addEventListener("click", async () => {
+    if (!_folderState.user) return;
+    const tree = document.getElementById("folder-tree");
+    tree.innerHTML = `<p class="muted">Henter mapper…</p>`;
+    try {
+      const r = await api("GET", `/api/graph/folders?user=${encodeURIComponent(_folderState.user)}`);
+      _folderState.includes = new Set(r.selected_paths || []);
+      tree.innerHTML = renderFolderTree(r.folders, "");
+      wireFolderTree();
+    } catch (e) {
+      tree.innerHTML = `<p class="err">Feil: ${escapeHtml(e.message)}</p>`;
+    }
+  });
+
+  function renderFolderTree(folders, indent) {
+    if (!folders || !folders.length)
+      return `<p class="muted">Ingen mapper.</p>`;
+    return `<ul class="folder-list">${folders
+      .map((f) => {
+        const checked = _folderState.includes.has(f.path) ? "checked" : "";
+        return `
+          <li class="folder-item">
+            <label>
+              <input type="checkbox" data-folder-path="${escapeHtml(f.path)}" ${checked}/>
+              <span class="folder-name">${escapeHtml(f.name)}</span>
+              <span class="muted small">${f.child_count ?? 0} elementer</span>
+            </label>
+          </li>`;
+      })
+      .join("")}</ul>`;
+  }
+
+  function wireFolderTree() {
+    $$("[data-folder-path]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        if (cb.checked) _folderState.includes.add(cb.dataset.folderPath);
+        else _folderState.includes.delete(cb.dataset.folderPath);
+      });
+    });
+  }
+
+  document.getElementById("folder-save-btn")?.addEventListener("click", async () => {
+    if (!_folderState.user) return;
+    const status = document.getElementById("folder-save-status");
+    status.textContent = "Lagrer…";
+    try {
+      const paths = Array.from(_folderState.includes);
+      await api("POST", "/api/graph/folder-selection", {
+        user: _folderState.user,
+        paths,
+      });
+      status.style.color = "#1e8b6f";
+      status.textContent = `Lagret ${paths.length} mappe(r) for ${_folderState.user}.`;
+    } catch (e) {
+      status.style.color = "#b03030";
+      status.textContent = `Feil: ${e.message}`;
+    }
+  });
+
+  // ─── MCP tab ──────────────────────────────────────────────────────
+  async function loadMcpTab() {
+    try {
+      const r = await api("GET", "/api/mcp/info");
+      document.getElementById("mcp-url").textContent = r.url || "MCP er deaktivert";
+
+      const status = document.getElementById("mcp-status");
+      if (!r.enabled) {
+        status.textContent = "Deaktivert";
+        status.style.background = "var(--grey-100)";
+      } else if (!r.bearer_token_set) {
+        status.textContent = "Mangler bearer-token";
+        status.style.background = "var(--cream-dim)";
+        status.style.color = "#b07a14";
+      } else {
+        status.textContent = "Aktiv";
+        status.style.background = "var(--green-dim)";
+        status.style.color = "var(--green)";
+      }
+
+      // Token display: don't render the actual token; tell user how to retrieve.
+      const tokenPlaceholder = r.bearer_token_set
+        ? "<MCP_BEARER_TOKEN — hent fra Railway/Settings>"
+        : "<sett MCP_BEARER_TOKEN først>";
+      const url = r.url || "https://<din-railway-url>/mcp";
+
+      // Claude Desktop config
+      document.getElementById("mcp-claude-cfg").textContent = JSON.stringify(
+        {
+          mcpServers: {
+            "loki-byggkon": {
+              url: url,
+              transport: "streamable-http",
+              headers: {
+                Authorization: `Bearer ${tokenPlaceholder}`,
+              },
+            },
+          },
+        },
+        null,
+        2
+      );
+
+      // Cursor config
+      document.getElementById("mcp-cursor-cfg").textContent = JSON.stringify(
+        {
+          mcpServers: {
+            "loki-byggkon": {
+              url: url,
+              transport: "streamable-http",
+              env: {
+                AUTH_HEADER: `Bearer ${tokenPlaceholder}`,
+              },
+            },
+          },
+        },
+        null,
+        2
+      );
+
+      // Continue
+      document.getElementById("mcp-continue-cfg").textContent = JSON.stringify(
+        {
+          experimental: {
+            modelContextProtocolServers: [
+              {
+                transport: {
+                  type: "streamable-http",
+                  url: url,
+                  headers: { Authorization: `Bearer ${tokenPlaceholder}` },
+                },
+                name: "loki-byggkon",
+              },
+            ],
+          },
+        },
+        null,
+        2
+      );
+
+      // Generic
+      document.getElementById("mcp-generic-cfg").textContent = JSON.stringify(
+        {
+          name: "loki-byggkon",
+          transport: "streamable-http",
+          url: url,
+          headers: {
+            Authorization: `Bearer ${tokenPlaceholder}`,
+            Accept: "application/json, text/event-stream",
+          },
+        },
+        null,
+        2
+      );
+    } catch (e) {
+      console.warn("mcp info failed:", e);
+    }
+  }
+
+  document.addEventListener("click", (e) => {
+    const target = e.target.closest("[data-copy]");
+    if (!target) return;
+    const elId = target.dataset.copy;
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const text = el.textContent || "";
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        const orig = target.textContent;
+        target.textContent = "Kopiert ✓";
+        setTimeout(() => {
+          target.textContent = orig;
+        }, 1200);
+      })
+      .catch(() => {
+        target.textContent = "Kunne ikke kopiere";
+      });
+  });
 
   // ─── Init ─────────────────────────────────────────────────────────
   loadStats();
