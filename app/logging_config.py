@@ -29,8 +29,14 @@ def configure_logging(level: str = "INFO") -> None:
         "PIL", "PIL.PngImagePlugin", "PIL.TiffImagePlugin",
         # Unstructured's per-element verbosity
         "unstructured", "unstructured.partition", "unstructured_inference",
+        # ezdxf logs every DXF auto-upgrade and dictionary creation
+        "ezdxf", "ezdxf.lldxf", "ezdxf.recover", "ezdxf.entitydb",
+        # matplotlib font/style messages
+        "matplotlib", "matplotlib.font_manager",
         # Heavy ML libs
         "transformers", "torch",
+        # APScheduler "Adding job ..." / "Removed job ..."
+        "apscheduler.scheduler", "apscheduler.executors.default",
     )
     for noisy in noisy_loggers:
         logging.getLogger(noisy).setLevel(logging.WARNING)

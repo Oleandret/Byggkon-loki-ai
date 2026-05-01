@@ -6,16 +6,25 @@ hente tekst (titteltabell, lag, blokker, annotasjoner, dimensjoner), og
 rendrer til PNG for multimodal embedding der Gemini er aktiv.
 
 Fokus på det som er søkbart innhold:
-  • Drawing-properties (DWGPROPS): tittel, forfatter, prosjekt, dato
-  • Titteltabell: blokk-attributter (gjerne KUNDE/PROSJEKT/REV/DATO/SKALA)
-  • All TEXT, MTEXT, ATTRIB, ATTDEF, MULTILEADER
-  • Lag-navn (gir rom-/bygningsdel-info: A-WALL, A-DOOR, M-PIPE-...)
-  • Blokk-navn (forteller hvilke symboler som er brukt)
-  • Dimensjoner (mål)
+  - Drawing-properties (DWGPROPS): tittel, forfatter, prosjekt, dato
+  - Titteltabell: blokk-attributter (gjerne KUNDE/PROSJEKT/REV/DATO/SKALA)
+  - All TEXT, MTEXT, ATTRIB, ATTDEF, MULTILEADER
+  - Lag-navn (gir rom-/bygningsdel-info: A-WALL, A-DOOR, M-PIPE-...)
+  - Blokk-navn (forteller hvilke symboler som er brukt)
+  - Dimensjoner (maal)
 
 Alt samles til ett tekst-dokument som chunkes som vanlig.
+
+OBS: matplotlib MAA konfigureres med Agg-backend FOER pyplot importeres,
+ellers henger den i Qt/Tk og lekker minne. Importen staar foerst.
 """
 from __future__ import annotations
+
+# Force non-interactive matplotlib backend BEFORE any other matplotlib import.
+# This is the difference between a stable container and one that gets
+# OOM-killed after a few dozen DWG renders.
+import matplotlib  # noqa: E402
+matplotlib.use("Agg", force=True)  # noqa: E402
 
 import os
 import shutil
@@ -209,7 +218,14 @@ def _render_dxf_to_png(dxf_path: str, out_path: str, max_size: int = 2000) -> bo
 
     Returns True on success. Best-effort — failures here just mean the
     drawing won't have an image embedding, the text still goes through.
+
+    Memory-safety: matplotlib accumulates Figure objects in module globals
+    even after plt.close(fig). On long-running containers this manifests as
+    OOM kills after ~50–100 DWG renders. We close 'all' figures and force
+    a gc.collect() to reclaim the underlying arrays.
     """
+    import gc
+    fig = None
     try:
         import ezdxf
         from ezdxf.addons.drawing import Frontend, RenderContext
@@ -219,7 +235,9 @@ def _render_dxf_to_png(dxf_path: str, out_path: str, max_size: int = 2000) -> bo
         doc = ezdxf.readfile(dxf_path)
         msp = doc.modelspace()
 
-        fig = plt.figure(figsize=(20, 14), dpi=120)
+        # Smaller figure than before — 14x10 @ 100 dpi keeps memory in check
+        # while still producing a usable embedding image (~1400×1000 px).
+        fig = plt.figure(figsize=(14, 10), dpi=100)
         ax = fig.add_axes([0, 0, 1, 1])
         ax.set_aspect("equal")
         ax.set_axis_off()
@@ -228,13 +246,22 @@ def _render_dxf_to_png(dxf_path: str, out_path: str, max_size: int = 2000) -> bo
         backend = MatplotlibBackend(ax)
         Frontend(ctx, backend).draw_layout(msp, finalize=True)
 
-        fig.savefig(out_path, dpi=120, bbox_inches="tight",
+        fig.savefig(out_path, dpi=100, bbox_inches="tight",
                     facecolor="white", edgecolor="none")
-        plt.close(fig)
         return os.path.exists(out_path) and os.path.getsize(out_path) > 0
     except Exception as e:  # noqa: BLE001
         log.warning("dwg.render.failed", err=str(e))
         return False
+    finally:
+        # Aggressive cleanup — matplotlib leaks otherwise.
+        try:
+            import matplotlib.pyplot as plt
+            if fig is not None:
+                plt.close(fig)
+            plt.close("all")
+        except Exception:  # noqa: BLE001
+            pass
+        gc.collect()
 
 
 def parse_dwg_or_dxf(file_path: str, *, extract_image: bool = False) -> ParseResult:
@@ -271,7 +298,15 @@ def parse_dwg_or_dxf(file_path: str, *, extract_image: bool = False) -> ParseRes
             ))
 
         images: list[ImageBlob] = []
-        if extract_image:
+        # Skip render for very large drawings — they're memory-intensive and
+        # the text alone usually carries enough signal. Configurable via the
+        # DWG_RENDER_MAX_BYTES env var (default 25 MB).
+        max_render_bytes = int(os.environ.get("DWG_RENDER_MAX_BYTES", 25 * 1024 * 1024))
+        try:
+            src_size = os.path.getsize(file_path)
+        except OSError:
+            src_size = 0
+        if extract_image and src_size <= max_render_bytes:
             png_path = os.path.join(work_dir, "render.png")
             if _render_dxf_to_png(dxf_path, png_path):
                 with open(png_path, "rb") as fh:
@@ -284,6 +319,13 @@ def parse_dwg_or_dxf(file_path: str, *, extract_image: bool = False) -> ParseRes
                             "rendered": True,
                         },
                     ))
+        elif extract_image and src_size > max_render_bytes:
+            log.info(
+                "dwg.render.skip.too_large",
+                file=os.path.basename(file_path),
+                size_mb=round(src_size / 1024 / 1024, 1),
+                limit_mb=round(max_render_bytes / 1024 / 1024, 1),
+            )
 
         log.info(
             "dwg.parse.done",
