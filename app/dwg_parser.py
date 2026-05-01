@@ -24,7 +24,7 @@ import tempfile
 from typing import Optional
 
 from .logging_config import get_logger
-from .unstructured_proc import Chunk, ImageBlob, ParseResult
+from .unstructured_proc import Chunk, ImageBlob, ParseResult, sanitize_text
 
 log = get_logger(__name__)
 
@@ -254,6 +254,11 @@ def parse_dwg_or_dxf(file_path: str, *, extract_image: bool = False) -> ParseRes
             dxf_path = file_path
 
         text_blob, md = _extract_text_from_dxf(dxf_path)
+        # Strip lone surrogates that DWG round-trips through Win-1252; these
+        # would crash JSON serialization at the Pinecone or OpenAI boundary.
+        text_blob = sanitize_text(text_blob)
+        clean_md = {k: (sanitize_text(v) if isinstance(v, str) else v)
+                    for k, v in md.items()}
         chunks: list[Chunk] = []
         if text_blob.strip():
             chunks.append(Chunk(
@@ -261,7 +266,7 @@ def parse_dwg_or_dxf(file_path: str, *, extract_image: bool = False) -> ParseRes
                 metadata={
                     "filetype": ext.lstrip("."),
                     "source": "dwg-parser",
-                    **md,
+                    **clean_md,
                 },
             ))
 

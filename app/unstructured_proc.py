@@ -54,10 +54,39 @@ class ParseResult:
     images: list[ImageBlob] = field(default_factory=list)
 
 
+def sanitize_text(s: str) -> str:
+    """Strip lone Unicode surrogates and other characters that won't survive
+    UTF-8 serialization to Pinecone or OpenAI/Gemini.
+
+    DWG and some legacy Office files round-trip text through Windows-1252
+    badly, leaving lone surrogates (U+DC80–U+DCFF) that crash json.dumps.
+    """
+    if not s:
+        return s
+    try:
+        # The cheap way: encode-decode with surrogate replacement.
+        return s.encode("utf-8", errors="replace").decode("utf-8")
+    except Exception:  # noqa: BLE001
+        # Last resort: drop characters outside the BMP encodable range.
+        return "".join(ch for ch in s if ord(ch) < 0xD800 or ord(ch) > 0xDFFF)
+
+
+_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp"}
+
+
 def _pick_strategy(file_path: str, configured: UnstructuredStrategy) -> str:
+    """Pick partition strategy for a file.
+
+    Important: Unstructured rejects strategy='fast' for image files —
+    images REQUIRE hi_res (which uses OCR). So even if the user has
+    set UNSTRUCTURED_STRATEGY=fast for speed elsewhere, we override
+    for images.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in _IMAGE_EXT:
+        return "hi_res"  # forced — fast doesn't work on images
     if configured != UnstructuredStrategy.AUTO:
         return configured.value
-    ext = os.path.splitext(file_path)[1].lower()
     if ext in _HI_RES_EXT:
         return "hi_res"
     return "fast"
@@ -154,7 +183,7 @@ def partition_and_chunk(
 
     chunks: list[Chunk] = []
     for el in chunks_raw:
-        text = (el.text or "").strip()
+        text = sanitize_text((el.text or "").strip())
         if not text:
             continue
         md_obj = el.metadata
@@ -215,23 +244,25 @@ def _image_blob_from(el) -> ImageBlob | None:
 def _flatten_metadata(md: dict) -> dict:
     """Pinecone metadata must be primitive types or lists of strings.
 
-    Drop None/empty, coerce simple dicts to strings.
+    Drop None/empty, coerce simple dicts to strings, strip surrogates that
+    would crash JSON serialization.
     """
     flat: dict = {}
     for k, v in md.items():
         if v is None:
             continue
-        if isinstance(v, (str, int, float, bool)):
+        if isinstance(v, str):
+            flat[k] = sanitize_text(v)
+        elif isinstance(v, (int, float, bool)):
             flat[k] = v
         elif isinstance(v, list):
-            # Only keep string-coercible lists.
             try:
-                flat[k] = [str(x) for x in v if x is not None][:50]
+                flat[k] = [sanitize_text(str(x)) for x in v if x is not None][:50]
             except Exception:  # noqa: BLE001
                 pass
         else:
             try:
-                s = str(v)
+                s = sanitize_text(str(v))
                 if 0 < len(s) < 500:
                     flat[k] = s
             except Exception:  # noqa: BLE001
