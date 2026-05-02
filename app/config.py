@@ -64,7 +64,12 @@ class Settings(BaseSettings):
     # Scheduler
     sync_interval_minutes: int = 10
     sync_cron: str = ""
-    sync_on_startup: bool = True
+    # Default OFF: kicking off a heavy sync the moment the container boots
+    # makes the healthcheck race the embedder/unstructured cold-start, and
+    # on RAM-tight Railway plans this is the difference between a clean
+    # boot and an OOM-kill loop. Flip back on via env or admin once
+    # you've confirmed the container has headroom.
+    sync_on_startup: bool = False
 
     # ─── Embedding provider selector ─────────────────────────────────
     # 'openai'  → write only to OpenAI index
@@ -96,7 +101,13 @@ class Settings(BaseSettings):
     pinecone_namespace: str = ""
 
     # Unstructured
-    unstructured_strategy: UnstructuredStrategy = UnstructuredStrategy.AUTO
+    # 'auto' silently routes PDFs/images to 'hi_res' which loads
+    # detectron2/yolox layout-detection models (~2-4 GB resident). On
+    # Railway's smaller plans that's enough to OOM-kill the worker.
+    # Default to 'fast' (pdfminer text extraction) which keeps RSS in
+    # the few-hundred-MB range. Bump to 'hi_res' from /admin once you've
+    # verified the container has the headroom.
+    unstructured_strategy: UnstructuredStrategy = UnstructuredStrategy.FAST
     unstructured_chunk_max_chars: int = 1500
     unstructured_chunk_overlap: int = 150
 
@@ -107,7 +118,12 @@ class Settings(BaseSettings):
     # Runtime
     log_level: str = "INFO"
     port: int = 8000
-    process_concurrency: int = 2
+    # Process one file at a time by default. Each in-flight file holds
+    # the parsed-element list, raw download bytes, and (for hi_res PDFs)
+    # an inference-model resident set in memory; running two in parallel
+    # on a 1-2 GB Railway container is the second-most-common cause of
+    # OOM kills after the strategy choice above.
+    process_concurrency: int = 1
 
     # Admin UI
     admin_password: str = ""  # if empty, admin UI is locked (no login possible)

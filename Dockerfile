@@ -63,7 +63,30 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     # Don't try to download NLTK data at import time; unstructured handles
     # this gracefully if missing.
-    NLTK_DATA=/usr/share/nltk_data
+    NLTK_DATA=/usr/share/nltk_data \
+    # ─── Memory tuning for Railway containers ─────────────────────
+    # Glibc allocates a per-thread arena (~64 MB each by default) which
+    # fragments badly under unstructured + ML-inference workloads. Capping
+    # to 2 arenas saves 200-500 MB of RSS on long-running containers and
+    # is the single biggest fix for the OOM-kill loop on Railway.
+    MALLOC_ARENA_MAX=2 \
+    # BLAS/OMP libraries default to spawning one thread per CPU. On a
+    # Railway 4-vCPU host that means 4× duplicated thread pools across
+    # numpy / torch / onnxruntime — each 50-200 MB. We're I/O-bound on
+    # downloads + embeddings anyway, so single-thread BLAS is fine.
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    # HuggingFace tokenizers fork-detector + parallel decoder leaks RAM
+    # in long-running web workers. unstructured uses tokenizers heavily.
+    TOKENIZERS_PARALLELISM=false \
+    # onnxruntime (used by unstructured-inference layout models) likewise
+    # benefits from a tight thread budget on small containers.
+    ORT_DISABLE_ALL=0 \
+    # Stop matplotlib from picking a GUI backend if any display lib
+    # leaks into the container (Agg is forced again in dwg_parser.py).
+    MPLBACKEND=Agg
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 \
